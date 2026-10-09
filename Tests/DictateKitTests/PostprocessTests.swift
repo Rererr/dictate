@@ -203,7 +203,7 @@ import Testing
     @Test func 発話の後の改行は既定で無効で保存すると他の項目を残して切り替わる() throws {
         let url = try write(#"{"formatter": {"enabled": true}}"#)
         #expect(try !Config.load(from: url).newlineAfterUtterance)
-        try Config.saveNewlineAfterUtterance(true, to: url)
+        try Config.update(at: url) { $0.newlineAfterUtterance = true }
         let loaded = try Config.load(from: url)
         #expect(loaded.newlineAfterUtterance)
         #expect(loaded.formatter.enabled)
@@ -274,7 +274,7 @@ import Testing
     @Test func ホットキーの保存は他の項目を残し読み直すと同じ値になる() throws {
         let url = try write(#"{"formatter": {"enabled": true, "budgetSeconds": 2}, "alwaysPasteBundleIds": ["com.example"]}"#)
         let hotkey = Config.Hotkey(trigger: .mouse(button: 3), modifiers: [.command, .control])
-        try Config.saveHotkey(hotkey, to: url)
+        try Config.update(at: url) { $0.hotkey = hotkey }
         let loaded = try Config.load(from: url)
         #expect(loaded.hotkey == hotkey)
         #expect(loaded.hotkey.modifiers == [.control, .command])
@@ -285,23 +285,53 @@ import Testing
 
     @Test func 設定ファイルが無くてもホットキーを保存できる() throws {
         let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString)/config.json")
-        try Config.saveHotkey(Config.Hotkey(trigger: .key(code: 38), modifiers: [.control, .option]), to: url)
+        try Config.update(at: url) { $0.hotkey = Config.Hotkey(trigger: .key(code: 38), modifiers: [.control, .option]) }
         #expect(try Config.load(from: url).hotkey.displayName == "⌃⌥J")
     }
 
     @Test func 壊れた設定ファイルにはホットキーを上書きしない() throws {
         let broken = #"{"formater": {"enabled": true}}"#
         let url = try write(broken)
-        #expect(throws: Config.LoadError.self) { try Config.saveHotkey(Config.Hotkey(), to: url) }
+        #expect(throws: Config.LoadError.self) { try Config.update(at: url) { $0.hotkey = Config.Hotkey() } }
         #expect(try String(contentsOf: url, encoding: .utf8) == broken)
     }
 
-    @Test(arguments: [-1.0, 0, 1e300])
-    func 整形の予算が範囲外なら拒否する(seconds: Double) throws {
-        let url = try write(#"{"formatter": {"budgetSeconds": \#(seconds)}}"#)
-        #expect(throws: Config.LoadError.budgetOutOfRange(seconds)) { try Config.load(from: url) }
+    @Test(arguments: [
+        #"{"budgetSeconds": -1}"#, #"{"budgetSeconds": 0}"#, #"{"budgetSeconds": 1e300}"#,
+        #"{"temperature": -0.1}"#, #"{"temperature": 3}"#, #"{"maxTokens": 0}"#, #"{"maxTokens": 100000}"#,
+    ])
+    func 整形の設定が範囲外なら拒否する(formatter: String) throws {
+        let url = try write(#"{"formatter": \#(formatter)}"#)
+        #expect { try Config.load(from: url) } throws: { error in
+            guard case Config.LoadError.formatter = error else { return false }
+            return true
+        }
     }
 
+    @Test func 設定を書き出すと全項目が並び読み直しても同じ値になる() throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString)/config.json")
+        try Config.update(at: url) {
+            $0.formatter.enabled = true
+            $0.formatter.temperature = 0.2
+            $0.formatter.systemPrompt = "句読点だけ整える。"
+        }
+        let loaded = try Config.load(from: url)
+        #expect(loaded.formatter.enabled)
+        #expect(loaded.formatter.temperature == 0.2)
+        #expect(loaded.formatter.systemPrompt == "句読点だけ整える。")
+        #expect(loaded.formatter.maxTokens == 512)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        for key in ["hotkey", "newlineAfterUtterance", "alwaysPasteBundleIds", "history", "endpoint", "model", "budgetSeconds", "maxTokens", "enableThinking"] {
+            #expect(text.contains("\"\(key)\""))
+        }
+    }
+
+    @Test func プロンプトが未設定でも項目をnullで書き出す() throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString)/config.json")
+        try Config.update(at: url)
+        #expect(try String(contentsOf: url, encoding: .utf8).contains("\"systemPrompt\" : null"))
+        #expect(try Config.load(from: url) == Config())
+    }
 }
 
 @Suite struct 履歴 {

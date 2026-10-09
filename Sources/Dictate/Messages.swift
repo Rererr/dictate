@@ -30,7 +30,7 @@ enum Messages {
         case .adopted: nil
         case .timedOut: "整形が間に合わなかったため、整形前の文を挿入しました。"
         case .rejected: "整形の結果が検証を通らなかったため、整形前の文を挿入しました。"
-        case .unreachable: "整形サーバに接続できないため、整形前の文を挿入しました。サーバを起動するか、config.json の formatter.enabled を false にしてください。"
+        case .unreachable: "整形サーバから結果を得られなかったため、整形前の文を挿入しました。サーバが起動しているかを確認するか、メニューの「LLM で整える」をオフにしてください。"
         }
     }
 

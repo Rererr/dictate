@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Config: Sendable, Equatable, Decodable {
+public struct Config: Sendable, Equatable, Codable {
     public struct Hotkey: Sendable, Equatable, Codable {
         public enum Modifier: String, Sendable, Codable, CaseIterable {
             case control, option, shift, command
@@ -111,11 +111,18 @@ public struct Config: Sendable, Equatable, Decodable {
         ]
     }
 
-    public struct Formatter: Sendable, Equatable, Decodable {
+    public struct Formatter: Sendable, Equatable, Codable {
         public var enabled = false
         public var endpoint = URL(string: "http://127.0.0.1:8124/v1")!
         public var model = "mlx-community/Qwen3-8B-4bit"
+        /// 確定からこの秒数以内に検証済みの結果が届かなければ、整形前の文を挿入する。
         public var budgetSeconds = 1.0
+        public var temperature = 0.0
+        public var maxTokens = 512
+        /// Qwen3 など、思考を出力するモデルで思考を止める指定を付ける。
+        public var enableThinking = false
+        /// nil なら組み込みのプロンプトを使う。変えても、検証を通るのはフィラーの削除と句読点の変更だけ。
+        public var systemPrompt: String?
 
         public init() {}
 
@@ -126,12 +133,38 @@ public struct Config: Sendable, Equatable, Decodable {
             endpoint = try container.decodeIfPresent(URL.self, forKey: .endpoint) ?? endpoint
             model = try container.decodeIfPresent(String.self, forKey: .model) ?? model
             budgetSeconds = try container.decodeIfPresent(Double.self, forKey: .budgetSeconds) ?? budgetSeconds
+            temperature = try container.decodeIfPresent(Double.self, forKey: .temperature) ?? temperature
+            maxTokens = try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? maxTokens
+            enableThinking = try container.decodeIfPresent(Bool.self, forKey: .enableThinking) ?? enableThinking
+            systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
         }
 
-        private enum CodingKeys: String, CodingKey, CaseIterable { case enabled, endpoint, model, budgetSeconds }
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(enabled, forKey: .enabled)
+            try container.encode(endpoint, forKey: .endpoint)
+            try container.encode(model, forKey: .model)
+            try container.encode(budgetSeconds, forKey: .budgetSeconds)
+            try container.encode(temperature, forKey: .temperature)
+            try container.encode(maxTokens, forKey: .maxTokens)
+            try container.encode(enableThinking, forKey: .enableThinking)
+            // 項目があることが設定ファイルから分かるように、未設定でも null で書き出す
+            try container.encode(systemPrompt, forKey: .systemPrompt)
+        }
+
+        private enum CodingKeys: String, CodingKey, CaseIterable {
+            case enabled, endpoint, model, budgetSeconds, temperature, maxTokens, enableThinking, systemPrompt
+        }
+
+        var problem: String? {
+            if !(budgetSeconds > 0 && budgetSeconds <= 30) { return "formatter.budgetSeconds が範囲外です（現在 \(budgetSeconds)）。0 より大きく 30 以下にしてください。" }
+            if !(temperature >= 0 && temperature <= 2) { return "formatter.temperature が範囲外です（現在 \(temperature)）。0 以上 2 以下にしてください。" }
+            if !(1...4096).contains(maxTokens) { return "formatter.maxTokens が範囲外です（現在 \(maxTokens)）。1 以上 4096 以下にしてください。" }
+            return nil
+        }
     }
 
-    public struct History: Sendable, Equatable, Decodable {
+    public struct History: Sendable, Equatable, Codable {
         public var enabled = true
 
         public init() {}
@@ -170,7 +203,7 @@ public struct Config: Sendable, Equatable, Decodable {
         case unreadable(path: String, detail: String)
         case invalid(path: String, detail: String)
         case hotkey(Hotkey.Problem)
-        case budgetOutOfRange(Double)
+        case formatter(String)
 
         public var errorDescription: String? {
             func name(_ path: String) -> String { URL(filePath: path).lastPathComponent }
@@ -178,7 +211,7 @@ public struct Config: Sendable, Equatable, Decodable {
             case .unreadable(let path, let detail): "\(name(path)) を読めません。\(detail)"
             case .invalid(let path, let detail): "\(name(path)) の書式が正しくありません。該当の項目は \(detail)"
             case .hotkey(let problem): "config.json の hotkey は使えません。\(problem.localizedDescription)"
-            case .budgetOutOfRange(let seconds): "formatter.budgetSeconds が範囲外です（現在 \(seconds)）。0 より大きく 30 以下にしてください。"
+            case .formatter(let problem): problem
             }
         }
     }
@@ -201,33 +234,20 @@ public struct Config: Sendable, Equatable, Decodable {
             throw LoadError.invalid(path: url.path, detail: error.localizedDescription)
         }
         if let problem = config.hotkey.problem { throw LoadError.hotkey(problem) }
-        guard config.formatter.budgetSeconds > 0, config.formatter.budgetSeconds <= 30 else {
-            throw LoadError.budgetOutOfRange(config.formatter.budgetSeconds)
-        }
+        if let problem = config.formatter.problem { throw LoadError.formatter(problem) }
         return config
     }
 
-    /// 登録の窓からの保存。
-    public static func saveHotkey(_ hotkey: Hotkey, to url: URL) throws {
-        try save(JSONSerialization.jsonObject(with: JSONEncoder().encode(hotkey)), forKey: CodingKeys.hotkey.rawValue, to: url)
-    }
-
-    /// メニューからの切り替え。
-    public static func saveNewlineAfterUtterance(_ enabled: Bool, to url: URL) throws {
-        try save(enabled, forKey: CodingKeys.newlineAfterUtterance.rawValue, to: url)
-    }
-
-    /// 1 項目だけを書き換える。他の項目は書かれているまま残す。
+    /// 設定を読み、変更を加えて、全項目を書き出す。メニューと登録の窓からの変更に使う。
+    /// 書き出すと全項目が現在の値で並ぶので、手で直すときは違うところだけ直せばよい。
     /// 既存のファイルが壊れているときは上書きせずに失敗する（本人が書いた内容を消さない）。
-    private static func save(_ value: Any, forKey key: String, to url: URL) throws {
-        var root: [String: Any] = [:]
-        if FileManager.default.fileExists(atPath: url.path) {
-            _ = try load(from: url)
-            root = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] ?? [:]
-        }
-        root[key] = value
+    public static func update(at url: URL, _ change: (inout Config) -> Void = { _ in }) throws {
+        var config = try load(from: url)
+        change(&config)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: url, options: .atomic)
+        try encoder.encode(config).write(to: url, options: .atomic)
     }
 
     private static func describe(_ error: DecodingError) -> String {

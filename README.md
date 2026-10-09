@@ -84,7 +84,11 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
     "enabled": false,
     "endpoint": "http://127.0.0.1:8124/v1",
     "model": "mlx-community/Qwen3-8B-4bit",
-    "budgetSeconds": 1.0
+    "budgetSeconds": 1.0,
+    "temperature": 0,
+    "maxTokens": 512,
+    "enableThinking": false,
+    "systemPrompt": null
   },
   "history": { "enabled": true },
   "alwaysPasteBundleIds": [],
@@ -97,7 +101,12 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
 書式が壊れていると、既定値には読み替えず、箇所を示して停止する。
 直してからメニューの「設定と辞書を再読み込み」を選ぶ。
 
-LLM 整形（フィラーの除去と句読点）を使うときは、サーバを自分で立ててから `formatter.enabled` を `true` にする。
+メニューの「設定ファイルを開く」を選ぶと、全項目を現在の値で書き出してから `config.json` を開く。
+違うところだけ直して保存し、「設定と辞書を再読み込み」を選ぶ。
+
+LLM 整形（フィラーの除去と句読点）を使うときは、サーバを自分で立ててから、メニューの「LLM で整える（フィラーと句読点）」をオンにする。
+`budgetSeconds` 以内に結果が届かなければ、整形前の文を挿入する。遅いモデルを使うなら、この値を延ばす。
+`systemPrompt` を書くと組み込みのプロンプトを置き換える。ただし、挿入されるのは「フィラーの削除と句読点の変更だけ」の検証を通った出力に限られ、それ以外の書き換えは捨てて整形前の文を挿入する。
 
 ```sh
 mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'

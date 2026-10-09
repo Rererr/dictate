@@ -173,12 +173,10 @@ extension Duration {
 
 /// OpenAI 互換の chat completions を 1 発話 1 リクエストで呼ぶ。
 public struct LLMClient: Sendable {
-    public let endpoint: URL
-    public let model: String
+    public let settings: Config.Formatter
 
-    public init(endpoint: URL, model: String) {
-        self.endpoint = endpoint
-        self.model = model
+    public init(_ settings: Config.Formatter) {
+        self.settings = settings
     }
 
     public enum ClientError: Error, LocalizedError {
@@ -193,7 +191,7 @@ public struct LLMClient: Sendable {
         }
     }
 
-    static let systemPrompt = """
+    public static let defaultSystemPrompt = """
         あなたは音声入力の整形担当です。入力は音声認識の生テキストです。\
         フィラー（えっと、えー、あのー、あの、その、まあ、なんか）を取り除き、句読点を整えます。\
         それ以外の語は一字も変えません。<N1> のような印はそのまま残します。出力は本文だけ。
@@ -205,10 +203,10 @@ public struct LLMClient: Sendable {
             let content: String
         }
         let model: String
-        let temperature = 0
-        let max_tokens = 512
+        let temperature: Double
+        let max_tokens: Int
         let stream = false
-        let chat_template_kwargs = ["enable_thinking": false]
+        let chat_template_kwargs: [String: Bool]
         let messages: [Message]
     }
 
@@ -221,14 +219,18 @@ public struct LLMClient: Sendable {
     }
 
     public func format(_ text: String) async throws -> String {
-        var request = URLRequest(url: endpoint.appending(path: "chat/completions"))
+        var request = URLRequest(url: settings.endpoint.appending(path: "chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
-        request.httpBody = try JSONEncoder().encode(Request(model: model, messages: [
-            .init(role: "system", content: Self.systemPrompt),
-            .init(role: "user", content: text),
-        ]))
+        request.httpBody = try JSONEncoder().encode(Request(
+            model: settings.model, temperature: settings.temperature, max_tokens: settings.maxTokens,
+            chat_template_kwargs: ["enable_thinking": settings.enableThinking],
+            messages: [
+                .init(role: "system", content: settings.systemPrompt ?? Self.defaultSystemPrompt),
+                .init(role: "user", content: text),
+            ]
+        ))
         let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             throw ClientError.http(status: http.statusCode)
@@ -247,7 +249,7 @@ public struct LLMClient: Sendable {
 
     /// 設定の表示用。到達できるかだけを見る。
     public func isReachable() async -> Bool {
-        var request = URLRequest(url: endpoint.appending(path: "models"))
+        var request = URLRequest(url: settings.endpoint.appending(path: "models"))
         request.timeoutInterval = 1
         guard let (_, response) = try? await URLSession.shared.data(for: request) else { return false }
         return (response as? HTTPURLResponse)?.statusCode == 200

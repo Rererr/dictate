@@ -74,7 +74,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         rebuildMenu()
         guard loadError == nil, config.formatter.enabled else { return }
-        let client = LLMClient(endpoint: config.formatter.endpoint, model: config.formatter.model)
+        let client = LLMClient(config.formatter)
         Task {
             formatterReachable = await client.isReachable()
             rebuildMenu()
@@ -119,8 +119,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         if loadError == nil, !demo {
             action("発話の後に改行する", #selector(toggleNewlineAfterUtterance)).state = config.newlineAfterUtterance ? .on : .off
+            action("LLM で整える（フィラーと句読点）", #selector(toggleFormatter)).state = config.formatter.enabled ? .on : .off
         }
         _ = action("ホットキーを登録…", #selector(registerHotkey))
+        _ = action("設定ファイルを開く", #selector(openConfigFile))
         _ = action("設定と辞書を再読み込み", #selector(reload))
         _ = action(lastUtterance == nil ? "直前の発話をコピー（まだありません）" : "直前の発話をコピー", #selector(copyLastUtterance), enabled: lastUtterance != nil)
         menu.addItem(.separator())
@@ -138,7 +140,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             self.recorder = nil
             if let hotkey {
                 do {
-                    try Config.saveHotkey(hotkey, to: AppPaths.config)
+                    try Config.update(at: AppPaths.config) { $0.hotkey = hotkey }
                 } catch {
                     self.overlay.showToast(Messages.loadFailed(error.localizedDescription))
                 }
@@ -150,12 +152,30 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleNewlineAfterUtterance() {
+        updateConfig { $0.newlineAfterUtterance.toggle() }
+    }
+
+    @objc private func toggleFormatter() {
+        updateConfig { $0.formatter.enabled.toggle() }
+    }
+
+    private func updateConfig(_ change: (inout Config) -> Void) {
         do {
-            try Config.saveNewlineAfterUtterance(!config.newlineAfterUtterance, to: AppPaths.config)
+            try Config.update(at: AppPaths.config, change)
         } catch {
             overlay.showToast(Messages.loadFailed(error.localizedDescription))
         }
         reload()
+    }
+
+    /// 全項目を現在の値で書き出してから開く。壊れているときは、直せるようにそのまま開く。
+    @objc private func openConfigFile() {
+        if loadError == nil { try? Config.update(at: AppPaths.config) }
+        guard FileManager.default.fileExists(atPath: AppPaths.config.path) else {
+            overlay.showToast(Messages.loadFailed("設定ファイルを作れませんでした。"))
+            return
+        }
+        NSWorkspace.shared.open(AppPaths.config)
     }
 
     @objc private func copyLastUtterance() {
@@ -279,7 +299,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         var formatNote: String?
         if config.formatter.enabled, !post.body.isEmpty {
             overlay.showCaption(.working, Messages.formatting)
-            let client = LLMClient(endpoint: config.formatter.endpoint, model: config.formatter.model)
+            let client = LLMClient(config.formatter)
             let body = post.body
             let formatting = Task.detached { await formatVerified(body, using: client.format) }
             let inBudget = await outcome(of: formatting, within: config.formatter.budgetSeconds)
