@@ -17,20 +17,104 @@ A push-to-talk dictation app for macOS (Japanese). Hold a hotkey, speak, and the
 - 認識誤りの自動補正はしない。読み辞書で直す（理由と、試して退けた方式は `docs/design.md` の ADR-10）。
 - 未確認の事項と既知の限界は `docs/design.md` の §9 にある。
 
-## 必要なもの
+## インストール
 
-- macOS 26 以降、Apple Silicon
-- Swift 6.2 以降（Xcode は不要。Command Line Tools で足りる）
+配布用のバイナリは無いので、手元で組む。English: [Installation](#installation-english).
+
+### 必要なもの
+
+- macOS 26 以降、Apple Silicon（動作を確かめたのは macOS 27 だけ）
+- Swift 6.2 以降（Xcode は不要。Command Line Tools で足りる。`xcode-select --install`）
 - 日本語の音声認識モデル（システム設定 > キーボード > 音声入力で日本語を追加）
 
-## 組み立てと起動
+### 手動で入れる
 
 ```sh
+git clone https://github.com/Rererr/dictate.git
+cd dictate
 scripts/bundle.sh          # build/Dictate.app を組んで署名する
 open build/Dictate.app
 ```
 
-初回の起動で、マイクとアクセシビリティの許可を求める。
+1. 起動すると、メニューバーにマイクのアイコンが出る。
+2. 初回の起動で、マイクとアクセシビリティの許可を求められる。マイクは許可し、アクセシビリティは、システム設定 > プライバシーとセキュリティ > アクセシビリティで Dictate をオンにする（挿入に使う）。
+3. 入力欄にカーソルを置き、⌃⌥⌘D を押している間に話して、離す。
+
+組み直すたびに許可が外れるのを避けたいときは、下の「署名と許可」のとおり証明書を作る。
+やめるときは、メニューから終了し、clone したディレクトリと `~/Library/Application Support/Dictate/` を消す。
+
+### LLM に入れてもらう
+
+Claude Code などのコーディングエージェントに、次をそのまま渡す。
+
+```text
+https://github.com/Rererr/dictate を、この Mac に導入してください。
+
+1. 前提を確かめる: macOS 26 以降、Apple Silicon、`swift --version` が 6.2 以降。満たさなければ、足りないものを伝えて止まる。
+2. 作業用のディレクトリに clone し、README.md を読む。
+3. `scripts/bundle.sh` で build/Dictate.app を組む。失敗したら、エラーをそのまま見せる。
+4. `scripts/test.sh` を流し、結果を伝える。
+5. `open build/Dictate.app` で起動する。
+6. あなたにはできない操作を、私に順に案内する: マイクの許可、アクセシビリティの許可、日本語の音声認識モデルの追加。
+
+守ること:
+- sudo を使わない。
+- キーチェーンに証明書を作らない。作るかどうかは、README の「署名と許可」を示して私に尋ねる。
+- clone したディレクトリの外のファイルを変更しない。
+
+最後に、既定のホットキー、設定ファイルの場所、アンインストールの方法を伝える。
+```
+
+## Installation (English)
+
+There is no prebuilt binary. Build it locally. The app is Japanese-only (recognition locale, reading dictionary, and voice commands).
+
+### Requirements
+
+- macOS 26 or later on Apple Silicon (tested only on macOS 27)
+- Swift 6.2 or later (Xcode is not required; Command Line Tools are enough: `xcode-select --install`)
+- The Japanese speech recognition model (System Settings > Keyboard > Dictation, add Japanese)
+
+### Manual install
+
+```sh
+git clone https://github.com/Rererr/dictate.git
+cd dictate
+scripts/bundle.sh          # builds and signs build/Dictate.app
+open build/Dictate.app
+```
+
+1. A microphone icon appears in the menu bar.
+2. On first launch, the app asks for microphone and Accessibility permissions. Allow the microphone, and turn Dictate on in System Settings > Privacy & Security > Accessibility (used to insert text).
+3. Put the cursor in a text field, hold ⌃⌥⌘D while speaking, then release.
+
+With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Reset it with `tccutil reset Accessibility com.rererr.dictate` and grant it again, or create a self-signed certificate named "Dictate Dev" as shown in the Japanese section "署名と許可" (the commands are language-independent).
+
+To uninstall, quit from the menu and delete the cloned directory and `~/Library/Application Support/Dictate/`.
+
+### Install with an LLM
+
+Paste this into a coding agent such as Claude Code.
+
+```text
+Install https://github.com/Rererr/dictate on this Mac.
+
+1. Check the requirements: macOS 26 or later, Apple Silicon, and `swift --version` 6.2 or later. If any is missing, tell me what is missing and stop.
+2. Clone the repository into a working directory and read README.md.
+3. Build build/Dictate.app with `scripts/bundle.sh`. If it fails, show me the error as is.
+4. Run `scripts/test.sh` and report the result.
+5. Launch it with `open build/Dictate.app`.
+6. Walk me through the steps you cannot do yourself: microphone permission, Accessibility permission, and adding the Japanese speech recognition model.
+
+Rules:
+- Do not use sudo.
+- Do not create a certificate in my keychain. Point me to the "署名と許可" section of the README and ask me first.
+- Do not modify files outside the cloned directory.
+
+Finally, tell me the default hotkey, where the settings files live, and how to uninstall.
+```
+
+## 署名と許可
 
 署名は、キーチェーンに自己署名の証明書「Dictate Dev」があればそれを使い、無ければアドホック署名になる。
 アドホック署名では、組み直すたびに OS が別のアプリとして扱うので、許可を付け直す必要がある。
