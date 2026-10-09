@@ -164,3 +164,7 @@ python3 eval/score.py ~/Downloads/dictate-eval.json
 ```swift
 .package(path: "../dictate/Packages/SpeechCore")
 ```
+
+## ライセンス
+
+MIT License。`LICENSE` を参照。
