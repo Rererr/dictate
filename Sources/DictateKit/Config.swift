@@ -198,6 +198,8 @@ public struct Config: Sendable, Equatable, Codable {
     public var alwaysPasteBundleIds: [String] = []
     /// 挿入のたびに Shift+Return を送る。1 回の発話を 1 行にする。
     public var newlineAfterUtterance = false
+    /// 「設定ファイルを開く」で使うアプリ（.app のパス）。nil なら開くたびに尋ねる。
+    public var editor: String?
 
     public init() {}
 
@@ -209,9 +211,21 @@ public struct Config: Sendable, Equatable, Codable {
         history = try container.decodeIfPresent(History.self, forKey: .history) ?? history
         alwaysPasteBundleIds = try container.decodeIfPresent([String].self, forKey: .alwaysPasteBundleIds) ?? alwaysPasteBundleIds
         newlineAfterUtterance = try container.decodeIfPresent(Bool.self, forKey: .newlineAfterUtterance) ?? newlineAfterUtterance
+        editor = try container.decodeIfPresent(String.self, forKey: .editor)
     }
 
-    private enum CodingKeys: String, CodingKey, CaseIterable { case hotkey, formatter, history, alwaysPasteBundleIds, newlineAfterUtterance }
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(hotkey, forKey: .hotkey)
+        try container.encode(formatter, forKey: .formatter)
+        try container.encode(history, forKey: .history)
+        try container.encode(alwaysPasteBundleIds, forKey: .alwaysPasteBundleIds)
+        try container.encode(newlineAfterUtterance, forKey: .newlineAfterUtterance)
+        // 項目があることが設定ファイルから分かるように、未設定でも null で書き出す
+        try container.encode(editor, forKey: .editor)
+    }
+
+    private enum CodingKeys: String, CodingKey, CaseIterable { case hotkey, formatter, history, alwaysPasteBundleIds, newlineAfterUtterance, editor }
 
     public enum LoadError: Error, LocalizedError, Equatable {
         case unreadable(path: String, detail: String)

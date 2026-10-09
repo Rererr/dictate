@@ -229,6 +229,14 @@ import Testing
         #expect(config.formatter.startCommand == nil)
     }
 
+    @Test func 設定ファイルを開くアプリは無ければnullで書き出し書けば読み直せる() throws {
+        let url = try write("{}")
+        try Config.update(at: url)
+        #expect(try String(contentsOf: url, encoding: .utf8).contains(#""editor" : null"#))
+        try Config.update(at: url) { $0.editor = "/Applications/CotEditor.app" }
+        #expect(try Config.load(from: url).editor == "/Applications/CotEditor.app")
+    }
+
     @Test func 空の配列は改行を挟まずに書き出す() throws {
         let url = try write("{}")
         try Config.update(at: url)

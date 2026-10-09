@@ -133,6 +133,18 @@ mlx-lm が入っていなければ、起動せずに「mlx-lm が入っていま
 8B より大きいモデルに替えるなら、`formatter.budgetSeconds` を延ばす。
 予算を超えた結果は挿入されず、履歴にだけ残る。
 
+### 自分の Mac で測る
+
+`eval/formatter_bench.py` が、フィラーを含む 12 文をサーバに送り、温まった状態の所要と採用率（アプリの検証の近似）を出す。
+モデルを替えて比べるときは、サーバをそのモデルで立ててから走らせる。
+
+```sh
+mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
+python3 eval/formatter_bench.py --model mlx-community/Qwen3-4B-4bit
+```
+
+作者の Mac mini（Apple Silicon、メモリ 48 GB）での Qwen3-8B 4bit は、中央値 0.48 秒、最大 0.81 秒、採用 9/12 だった（2026-10-10。棄却の 3 件は「を」の補い、「確認し」への言い換え、「了解です」の脱落で、どれも検証が捨てて整形前の文が入る）。
+
 ## 別のサーバを使う
 
 OpenAI 互換の API（`/v1/chat/completions`）を持つサーバなら、`config.json` の `formatter.endpoint` と `formatter.model` を変えれば使えるはずである。

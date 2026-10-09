@@ -64,5 +64,6 @@ enum Messages {
     static func recognitionFailed(_ detail: String) -> String { "認識に失敗しました。\(detail)" }
     static func microphoneFailed(_ detail: String) -> String { "マイクを開けません。\(detail)" }
     static func historyFailed(_ detail: String) -> String { "履歴に書けません。\(detail)" }
+    static func openFailed(_ app: String, _ detail: String) -> String { "「\(app)」で設定ファイルを開けませんでした（\(detail)）。config.json の editor を null に戻すと、次に開くときにアプリを選び直せます。" }
     static func loadFailed(_ detail: String) -> String { "\(detail)対応してから、メニューの「設定と辞書を再読み込み」を選んでください。" }
 }

@@ -328,7 +328,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         _ = action(recorder == nil ? "ホットキーを登録…" : "ホットキーの登録の窓を前に出す", #selector(registerHotkey))
-        _ = action("設定ファイルを開く", #selector(openConfigFile))
+        _ = action(config.editor == nil ? "設定ファイルを開く…" : "設定ファイルを開く", #selector(openConfigFile))
         _ = action("設定と辞書を再読み込み", #selector(reload))
         _ = action(lastUtterance == nil ? "直前の発話をコピー（まだありません）" : "直前の発話をコピー", #selector(copyLastUtterance), enabled: lastUtterance != nil)
         menu.addItem(.separator())
@@ -475,7 +475,51 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             overlay.showToast(Messages.loadFailed("設定ファイルを作れませんでした。"))
             return
         }
-        NSWorkspace.shared.open(AppPaths.config)
+        if let editor = config.editor {
+            openConfig(with: URL(fileURLWithPath: editor))
+            return
+        }
+        // JSON の既定のアプリは Mac ごとに違い（Xcode、ブラウザ等）、編集に向かないことが多い。初回に尋ねる
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "config.json をどのアプリで開きますか"
+        alert.informativeText = "書式のまま編集できるテキストエディタを選んでください。"
+        alert.addButton(withTitle: "テキストエディット")
+        alert.addButton(withTitle: "他のアプリを選ぶ…")
+        alert.addButton(withTitle: "キャンセル")
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = "次回からこのアプリで開く"
+        let app: URL
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            app = URL(fileURLWithPath: "/System/Applications/TextEdit.app")
+        case .alertSecondButtonReturn:
+            let panel = NSOpenPanel()
+            panel.allowedContentTypes = [.application]
+            panel.directoryURL = URL(fileURLWithPath: "/Applications")
+            panel.canChooseDirectories = false
+            panel.prompt = "このアプリで開く"
+            guard panel.runModal() == .OK, let chosen = panel.url else { return }
+            app = chosen
+        default:
+            return
+        }
+        if alert.suppressionButton?.state == .on {
+            do {
+                try Config.update(at: AppPaths.config) { $0.editor = app.path }
+                config.editor = app.path
+            } catch {
+                overlay.showToast(Messages.loadFailed(error.localizedDescription))
+            }
+        }
+        openConfig(with: app)
+    }
+
+    private func openConfig(with app: URL) {
+        NSWorkspace.shared.open([AppPaths.config], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) { [weak self] _, error in
+            guard let error else { return }
+            Task { @MainActor in self?.overlay.showToast(Messages.openFailed(app.deletingPathExtension().lastPathComponent, error.localizedDescription)) }
+        }
     }
 
     @objc private func copyLastUtterance() {
