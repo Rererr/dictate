@@ -209,6 +209,15 @@ import Testing
         #expect(loaded.formatter.enabled)
     }
 
+    @Test func 空の配列は改行を挟まずに書き出す() throws {
+        let url = try write("{}")
+        try Config.update(at: url)
+        let json = try String(contentsOf: url, encoding: .utf8)
+        #expect(json.contains(#""alwaysPasteBundleIds" : []"#))
+        #expect(json.contains(#""modifiers" : ["#))  // 既定のホットキーの修飾キーは空でない
+        #expect(!json.contains(/\[\s*\n\s*\]/))
+    }
+
     @Test func 書いた項目だけを上書きする() throws {
         let config = try Config.load(from: write(#"{"formatter": {"enabled": true}, "alwaysPasteBundleIds": ["com.example"]}"#))
         #expect(config.formatter.enabled)

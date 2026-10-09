@@ -247,7 +247,10 @@ public struct Config: Sendable, Equatable, Codable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try encoder.encode(config).write(to: url, options: .atomic)
+        // .prettyPrinted は空の配列を "[\n\n  ]" と書く。手で直すファイルなので "[]" に潰す
+        let json = String(decoding: try encoder.encode(config), as: UTF8.self)
+            .replacing(/\[\s+\]/, with: "[]")
+        try Data(json.utf8).write(to: url, options: .atomic)
     }
 
     private static func describe(_ error: DecodingError) -> String {
