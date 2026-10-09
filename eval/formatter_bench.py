@@ -59,6 +59,11 @@ def ask(endpoint, model, text, timeout):
         content = json.load(res)["choices"][0]["message"]["content"]
     return content.strip(), time.perf_counter() - started
 
+def has_filler(text):
+    """文頭のフィラー（台本のフィラーは全て文頭に置いてある）が残っているか。"""
+    head = text.lstrip(PUNCT)
+    return any(head.startswith(f) for f in FILLERS)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
@@ -66,21 +71,35 @@ def main():
     parser.add_argument("--timeout", type=float, default=60)
     args = parser.parse_args()
     ask(args.endpoint, args.model, "えっと、準備です", args.timeout)  # 温め
-    seconds, adopted, rejected = [], 0, []
+    seconds, adopted, effective, with_filler, rejected, untouched = [], 0, 0, 0, [], []
     for sentence in SENTENCES:
         masked, _ = mask(sentence)
         ask(args.endpoint, args.model, masked, args.timeout)  # 1 回目は捨てる（キャッシュの影響を揃える）
         output, elapsed = ask(args.endpoint, args.model, masked, args.timeout)
         seconds.append(elapsed)
-        if normalize(output) == normalize(masked):
+        ok = normalize(output) == normalize(masked)
+        if ok:
             adopted += 1
         else:
             rejected.append((masked, output))
-        print(f"{elapsed:5.2f}s  {'採用' if normalize(output) == normalize(masked) else '棄却'}  {output}")
+        if has_filler(masked):
+            with_filler += 1
+            if ok and not has_filler(output):
+                effective += 1
+                label = "効果"
+            elif ok:
+                untouched.append(output)
+                label = "採用（フィラー残り）"
+            else:
+                label = "棄却"
+        else:
+            label = "採用" if ok else "棄却"
+        print(f"{elapsed:5.2f}s  {label}  {output}")
     print()
     print(f"model: {args.model}")
     print(f"所要: 中央値 {statistics.median(seconds):.2f} 秒、最大 {max(seconds):.2f} 秒、最小 {min(seconds):.2f} 秒（{len(seconds)} 文、温まった状態）")
     print(f"採用: {adopted}/{len(SENTENCES)}（検証の近似。フィラーと句読点以外の変更があれば棄却）")
+    print(f"効果: {effective}/{with_filler}（フィラーのある文のうち、採用され、かつフィラーが消えたもの。採用でもフィラーを残したものは {len(untouched)}）")
     for masked, output in rejected:
         print(f"  棄却: {masked}\n     → {output}")
 
