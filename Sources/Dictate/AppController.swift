@@ -36,6 +36,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let minimumHold = Duration.milliseconds(300)
     private var loadError: String?
     private var formatterReachable: Bool?
+    private let formatterServer = FormatterServer(logURL: AppPaths.formatterLog)
+    /// 接続できないときの知らせと自動起動は、オンにしたときと起動時に一度だけ行う。
+    /// 他の設定を切り替えるたびには繰り返さず、やり直しはメニューの「整形サーバを起動」で本人が行う
+    private var formatterAttempted = false
     /// nil は確認中。
     private var modelInstalled: Bool?
     private var lastUtterance: String?
@@ -46,6 +50,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem.button?.image = NSImage(systemSymbolName: "mic", accessibilityDescription: "Dictate")
+        formatterServer.onExit = { [weak self] state in
+            guard let self, case .failed(let detail) = state else { return }
+            formatterReachable = false
+            overlay.showToast(Messages.formatterExited(detail))
+        }
         // メニューは開く直前（menuNeedsUpdate）にだけ組む。許可の状態を開いた時点の値で出せる
         menu.delegate = self
         statusItem.menu = menu
@@ -58,6 +67,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
         // マイクとアクセシビリティは OS が求めるが、認識モデルの未導入は誰も知らせない。起動時に一度だけ知らせる
         checkModel(notifyIfMissing: true)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        formatterServer.stop()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -94,9 +107,80 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             loadError = error.localizedDescription
             overlay.showToast(Messages.loadFailed(error.localizedDescription))
         }
-        guard loadError == nil, config.formatter.enabled else { return }
+        ensureFormatter()
+    }
+
+    /// 整形が有効なら接続を確かめ、できなければ起動コマンドがあるときはサーバを起動し、無いときは知らせる。
+    /// 無効にしたら、アプリが起動したサーバを止める。デモ再生では何もしない。
+    private func ensureFormatter() {
+        guard !demo, loadError == nil, config.formatter.enabled else {
+            formatterServer.stop()
+            formatterAttempted = false
+            return
+        }
+        if case .starting = formatterServer.state { return }
         let client = LLMClient(config.formatter)
-        Task { formatterReachable = await client.isReachable() }
+        Task {
+            let reachable = await client.isReachable()
+            guard config.formatter.enabled else { return }  // 確かめている間にオフにされた
+            formatterReachable = reachable
+            if reachable {
+                // 本人が立てたサーバに届いたなら、前の失敗の表示は要らない
+                if case .failed = formatterServer.state { formatterServer.stop() }
+                formatterAttempted = false
+                return
+            }
+            guard !formatterAttempted else { return }
+            formatterAttempted = true
+            if let command = config.formatter.startCommand {
+                startFormatterServer(command)
+            } else {
+                overlay.showToast(Messages.formatterUnreachable)
+            }
+        }
+    }
+
+    /// サーバを起動し、待ち受けが開くまで 1 秒ごとに確かめる。
+    /// 待ち受けはモデルの読み込みより先に開くので、開かないのはポート違いかハングであり、60 秒で諦める。
+    private func startFormatterServer(_ command: String) {
+        let launched: Bool
+        do {
+            launched = try formatterServer.start(command: command)
+        } catch {
+            overlay.showToast(Messages.formatterStartFailed(error.localizedDescription))
+            return
+        }
+        guard launched else { return }  // 起動中か動作中
+        overlay.showToast(Messages.formatterStarting)
+        let client = LLMClient(config.formatter)
+        Task {
+            for _ in 0..<60 {
+                try? await Task.sleep(for: .seconds(1))
+                // オフにされた（stopped）か、自分から終わった（failed。知らせは onExit）
+                guard case .starting = formatterServer.state else { return }
+                if await client.isReachable() {
+                    formatterServer.markRunning()
+                    formatterReachable = true
+                    overlay.showToast(Messages.formatterReady)
+                    // 最初の発話が予算に入るように、ここで一度温める（モデルの読み込み中なら空振りしてよい）
+                    _ = try? await client.format("えっと、準備です")
+                    return
+                }
+            }
+            guard case .starting = formatterServer.state else { return }
+            formatterServer.fail("サーバの待ち受けが 60 秒たっても開かない")
+            formatterReachable = false
+            overlay.showToast(Messages.formatterStartTimedOut)
+        }
+    }
+
+    @objc private func startFormatterServerFromMenu() {
+        guard let command = config.formatter.startCommand else { return }
+        startFormatterServer(command)
+    }
+
+    @objc private func openFormatterLog() {
+        NSWorkspace.shared.open(AppPaths.formatterLog)
     }
 
     private func buildMenu() {
@@ -125,10 +209,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             info("マイク: \(microphoneStatus.label)")
             info("アクセシビリティ: \(accessibilityTrusted ? "許可済み" : "未許可（挿入できません）")")
             info("日本語の認識モデル: \(modelInstalled.map { $0 ? "導入済み" : "未導入（認識できません）" } ?? "確認中")")
-            let reachability = switch formatterReachable {
-            case .some(true): "接続可"
-            case .some(false): "接続不可。整形前の文を挿入します"
-            case .none: "接続を確認中"
+            let reachability = switch (formatterServer.state, formatterReachable) {
+            case (.starting(let since), _): "サーバを起動中 \(Int(Date().timeIntervalSince(since))) 秒。接続できるまで整形前の文を挿入します"
+            case (.failed(let detail), _): "\(detail)。整形前の文を挿入します"
+            case (_, .some(true)): "接続可"
+            case (_, .some(false)): "接続不可。整形前の文を挿入します"
+            case (_, .none): "接続を確認中"
             }
             info(config.formatter.enabled ? "整形: 有効（\(reachability)）" : "整形: 無効")
             info("履歴: \(config.history.enabled ? "有効" : "無効")")
@@ -161,6 +247,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if loadError == nil, !demo {
             action("発話の後に改行する", #selector(toggleNewlineAfterUtterance)).state = config.newlineAfterUtterance ? .on : .off
             action("LLM で整える（フィラーと句読点）", #selector(toggleFormatter)).state = config.formatter.enabled ? .on : .off
+            // 接続できないときだけ、起動とログの項目を出す
+            if config.formatter.enabled, formatterReachable != true {
+                switch formatterServer.state {
+                case .stopped, .failed:
+                    if config.formatter.startCommand != nil { _ = action("整形サーバを起動", #selector(startFormatterServerFromMenu)) }
+                case .starting, .running:
+                    break
+                }
+                if FileManager.default.fileExists(atPath: AppPaths.formatterLog.path) {
+                    _ = action("整形サーバのログを開く", #selector(openFormatterLog))
+                }
+            }
         }
         _ = action(recorder == nil ? "ホットキーを登録…" : "ホットキーの登録の窓を前に出す", #selector(registerHotkey))
         _ = action("設定ファイルを開く", #selector(openConfigFile))

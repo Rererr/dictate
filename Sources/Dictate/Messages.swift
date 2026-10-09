@@ -31,6 +31,15 @@ enum Messages {
     static let secureInputAtInsert = "セキュア入力中のため、挿入しません。今の発話は、\(recover)"
     static let accessibilityDenied = "アクセシビリティの許可がないため、挿入できません。システム設定を開くので、プライバシーとセキュリティ > アクセシビリティで、Dictate を許可してください。今の発話は、\(recover)"
 
+    // 整形サーバ
+    static let formatterUnreachable = "整形サーバに接続できません。接続できるまでは整形前の文を挿入します。サーバを起動するか、config.json の formatter.startCommand に起動コマンドを書くと、オンにしたときにアプリが起動します。"
+    static let formatterStarting = "整形サーバを起動しています。接続できるまでは整形前の文を挿入します。"
+    static let formatterReady = "整形サーバに接続できました。"
+    static let formatterStartTimedOut = "整形サーバの待ち受けが 60 秒たっても開きません。startCommand の --port と endpoint が合っているかを確かめ、メニューの「整形サーバのログを開く」で原因を見てください。"
+    static func formatterStartFailed(_ detail: String) -> String { "整形サーバを起動できませんでした（\(detail)）。メニューの「整形サーバのログを開く」で原因を確かめてください。" }
+    /// detail は「サーバの起動に失敗（終了コード 127）」「サーバが動作中に終了（シグナル 9）」の形で届く。
+    static func formatterExited(_ detail: String) -> String { "整形\(detail)。接続できるまでは整形前の文を挿入します。メニューの「整形サーバのログを開く」で原因を確かめ、「整形サーバを起動」で起動し直せます。" }
+
     /// 整形を採用しなかった理由。本文は整形前のまま入っている。
     static func formatSkipped(_ status: FormatStatus) -> String? {
         switch status {

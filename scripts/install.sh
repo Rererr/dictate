@@ -37,6 +37,10 @@ mkdir -p ~/Applications
 rm -rf "$app"
 ditto build/Dictate.app "$app"
 print "置きました: $app"
-open "$app"
+# 前のプロセスの終了直後は LaunchServices が -600 で open を拒むことがあるので、少し待って再試行する
+for _ in {1..5}; do
+    open "$app" 2>/dev/null && break
+    sleep 1
+done
 print "メニューバーのマイクのアイコンから、マイク、アクセシビリティ、日本語の認識モデルの状態を確かめてください。"
 print "既定のホットキーは ⌃⌥⌘D（押している間だけ録音）。"

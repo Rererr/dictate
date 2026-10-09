@@ -123,6 +123,9 @@ public struct Config: Sendable, Equatable, Codable {
         public var enableThinking = false
         /// nil なら組み込みのプロンプトを使う。変えても、検証を通るのはフィラーの削除と句読点の変更だけ。
         public var systemPrompt: String?
+        /// 整形をオンにしたときに接続できなければ、アプリがこのコマンドでサーバを起動する（ログインシェルで実行）。
+        /// nil なら起動せず、接続できないと知らせるだけ。
+        public var startCommand: String?
 
         public init() {}
 
@@ -137,6 +140,7 @@ public struct Config: Sendable, Equatable, Codable {
             maxTokens = try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? maxTokens
             enableThinking = try container.decodeIfPresent(Bool.self, forKey: .enableThinking) ?? enableThinking
             systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
+            startCommand = try container.decodeIfPresent(String.self, forKey: .startCommand)
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -150,16 +154,18 @@ public struct Config: Sendable, Equatable, Codable {
             try container.encode(enableThinking, forKey: .enableThinking)
             // 項目があることが設定ファイルから分かるように、未設定でも null で書き出す
             try container.encode(systemPrompt, forKey: .systemPrompt)
+            try container.encode(startCommand, forKey: .startCommand)
         }
 
         private enum CodingKeys: String, CodingKey, CaseIterable {
-            case enabled, endpoint, model, budgetSeconds, temperature, maxTokens, enableThinking, systemPrompt
+            case enabled, endpoint, model, budgetSeconds, temperature, maxTokens, enableThinking, systemPrompt, startCommand
         }
 
         var problem: String? {
             if !(budgetSeconds > 0 && budgetSeconds <= 30) { return "formatter.budgetSeconds が範囲外です（現在 \(budgetSeconds)）。0 より大きく 30 以下にしてください。" }
             if !(temperature >= 0 && temperature <= 2) { return "formatter.temperature が範囲外です（現在 \(temperature)）。0 以上 2 以下にしてください。" }
             if !(1...4096).contains(maxTokens) { return "formatter.maxTokens が範囲外です（現在 \(maxTokens)）。1 以上 4096 以下にしてください。" }
+            if let startCommand, startCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "formatter.startCommand が空です。使わないなら null にしてください。" }
             return nil
         }
     }
@@ -292,4 +298,5 @@ public enum AppPaths {
     public static var config: URL { directory.appending(path: "config.json") }
     public static var dictionary: URL { directory.appending(path: "dictionary.tsv") }
     public static var history: URL { directory.appending(path: "history.jsonl") }
+    public static var formatterLog: URL { directory.appending(path: "formatter.log") }
 }

@@ -209,6 +209,16 @@ import Testing
         #expect(loaded.formatter.enabled)
     }
 
+    @Test func 起動コマンドは無ければnullで書き出し書けば読み直せる() throws {
+        let url = try write("{}")
+        try Config.update(at: url)
+        #expect(try String(contentsOf: url, encoding: .utf8).contains(#""startCommand" : null"#))
+        try Config.update(at: url) { $0.formatter.startCommand = "mlx_lm.server --port 8124" }
+        #expect(try Config.load(from: url).formatter.startCommand == "mlx_lm.server --port 8124")
+        let blank = try write(#"{"formatter": {"startCommand": " "}}"#)
+        #expect(throws: Config.LoadError.self) { try Config.load(from: blank) }
+    }
+
     @Test func 空の配列は改行を挟まずに書き出す() throws {
         let url = try write("{}")
         try Config.update(at: url)
@@ -369,5 +379,88 @@ import Testing
         let format = try decoder.decode(FormatRecord.self, from: Data(lines[1].utf8))
         #expect(format.type == "format")
         #expect(format.status == .timedOut)
+    }
+}
+
+@Suite struct 整形サーバ {
+    private func url(_ name: String) -> URL {
+        FileManager.default.temporaryDirectory.appending(path: "dictate-\(name)-\(UUID().uuidString)/formatter.log")
+    }
+
+    private func wait(until condition: @MainActor () -> Bool) async {
+        for _ in 0..<100 {
+            if await condition() { return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
+    /// 監視シェルの子（サーバ本体）の pid。まだ無ければ nil。
+    private func childProcess(of shell: Int32) -> Int32? {
+        let pgrep = Process()
+        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        pgrep.arguments = ["-P", String(shell)]
+        let output = Pipe()
+        pgrep.standardOutput = output
+        try? pgrep.run()
+        pgrep.waitUntilExit()
+        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        return text.split(separator: "\n").compactMap { Int32($0) }.first
+    }
+
+    @MainActor @Test func 自分から終わったサーバは失敗として残り出力はログに残る() async throws {
+        let server = FormatterServer(logURL: url("exit"))
+        var reported: FormatterServer.State?
+        server.onExit = { reported = $0 }
+        #expect(try server.start(command: "echo hello; exit 3"))
+        guard case .starting = server.state else { Issue.record("起動直後は starting"); return }
+        await wait { if case .failed = server.state { true } else { false } }
+        #expect(server.state == .failed("サーバの起動に失敗（終了コード 3）"))
+        #expect(reported == server.state)
+        let log = try String(contentsOf: server.logURL, encoding: .utf8)
+        #expect(log.hasPrefix("$ echo hello; exit 3\n"))
+        #expect(log.contains("hello"))
+    }
+
+    @MainActor @Test func 動作中に終わったサーバはそう区別して残る() async throws {
+        let server = FormatterServer(logURL: url("running"))
+        try server.start(command: "sleep 0.5")
+        server.markRunning()
+        await wait { if case .failed = server.state { true } else { false } }
+        #expect(server.state == .failed("サーバが動作中に終了（終了コード 0）"))
+    }
+
+    @MainActor @Test func 止めるとサーバ本体のプロセスも消え失敗にはならない() async throws {
+        let server = FormatterServer(logURL: url("stop"))
+        try server.start(command: "sleep 30")
+        let shell = try #require(server.processIdentifier)
+        await wait { childProcess(of: shell) != nil }  // ログインシェルの初期化が終わり、サーバ本体が動き出すまで
+        let child = try #require(childProcess(of: shell))
+        server.stop()
+        #expect(server.state == .stopped)
+        await wait { kill(child, 0) != 0 && kill(shell, 0) != 0 }
+        #expect(kill(child, 0) != 0)
+        #expect(kill(shell, 0) != 0)
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(server.state == .stopped)
+    }
+
+    @MainActor @Test func 起動中はもう一度起動しても二つ目を作らない() async throws {
+        let server = FormatterServer(logURL: url("twice"))
+        #expect(try server.start(command: "sleep 30"))
+        let pid = server.processIdentifier
+        #expect(try !server.start(command: "sleep 30"))
+        #expect(server.processIdentifier == pid)
+        server.stop()
+    }
+
+    @MainActor @Test func 諦めると止めてから失敗として残す() async throws {
+        let server = FormatterServer(logURL: url("fail"))
+        try server.start(command: "sleep 30")
+        let shell = try #require(server.processIdentifier)
+        server.fail("サーバの待ち受けが 60 秒たっても開かない")
+        #expect(server.state == .failed("サーバの待ち受けが 60 秒たっても開かない"))
+        #expect(server.processIdentifier == nil)
+        await wait { kill(shell, 0) != 0 }
+        #expect(kill(shell, 0) != 0)
     }
 }
