@@ -209,19 +209,19 @@ import Testing
         #expect(loaded.formatter.enabled)
     }
 
-    @Test func 起動コマンドは項目が無ければ既定でnullなら起動しない() throws {
+    @Test func 起動コマンドは無いかnullなら既定で空なら起動しない() throws {
         #expect(try Config.load(from: write("{}")).formatter.startCommand == Config.Formatter.defaultStartCommand)
-        #expect(try Config.load(from: write(#"{"formatter": {"startCommand": null}}"#)).formatter.startCommand == nil)
+        #expect(try Config.load(from: write(#"{"formatter": {"startCommand": null}}"#)).formatter.startCommand == Config.Formatter.defaultStartCommand)
+        #expect(try Config.load(from: write(#"{"formatter": {"startCommand": ""}}"#)).formatter.startCommand == nil)
+        #expect(try Config.load(from: write(#"{"formatter": {"startCommand": " "}}"#)).formatter.startCommand == nil)
         let url = try write("{}")
         try Config.update(at: url)
         #expect(try String(contentsOf: url, encoding: .utf8).contains(#""startCommand" : "mlx_lm.server"#))
         try Config.update(at: url) { $0.formatter.startCommand = "my_server --port 8124" }
         #expect(try Config.load(from: url).formatter.startCommand == "my_server --port 8124")
         try Config.update(at: url) { $0.formatter.startCommand = nil }
-        #expect(try String(contentsOf: url, encoding: .utf8).contains(#""startCommand" : null"#))
+        #expect(try String(contentsOf: url, encoding: .utf8).contains(#""startCommand" : """#))
         #expect(try Config.load(from: url).formatter.startCommand == nil)
-        let blank = try write(#"{"formatter": {"startCommand": " "}}"#)
-        #expect(throws: Config.LoadError.self) { try Config.load(from: blank) }
     }
 
     @Test func 空の配列は改行を挟まずに書き出す() throws {

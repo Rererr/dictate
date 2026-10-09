@@ -124,7 +124,8 @@ public struct Config: Sendable, Equatable, Codable {
         /// nil なら組み込みのプロンプトを使う。変えても、検証を通るのはフィラーの削除と句読点の変更だけ。
         public var systemPrompt: String?
         /// 整形をオンにしたときに接続できなければ、アプリがこのコマンドでサーバを起動する（ログインシェルで実行）。
-        /// 既定は mlx-lm で既定のモデルを既定のポートに立てるコマンド。設定に null を書くと起動せず、接続できないと知らせるだけ。
+        /// 既定は mlx-lm で既定のモデルを既定のポートに立てるコマンド。null は既定（systemPrompt と同じ扱い）。
+        /// 空文字なら起動せず、接続できないと知らせるだけ（読み込み時に nil にする）。
         public var startCommand: String? = Self.defaultStartCommand
         public static let defaultStartCommand = "mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
 
@@ -141,9 +142,9 @@ public struct Config: Sendable, Equatable, Codable {
             maxTokens = try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? maxTokens
             enableThinking = try container.decodeIfPresent(Bool.self, forKey: .enableThinking) ?? enableThinking
             systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
-            // 項目が無ければ既定、null なら「起動しない」。decodeIfPresent は両方 nil にするので分ける
-            if container.contains(.startCommand) {
-                startCommand = try container.decodeNil(forKey: .startCommand) ? nil : try container.decode(String.self, forKey: .startCommand)
+            // 無い・null は既定。空白だけなら「起動しない」
+            if let command = try container.decodeIfPresent(String.self, forKey: .startCommand) {
+                startCommand = command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : command
             }
         }
 
@@ -158,7 +159,8 @@ public struct Config: Sendable, Equatable, Codable {
             try container.encode(enableThinking, forKey: .enableThinking)
             // 項目があることが設定ファイルから分かるように、未設定でも null で書き出す
             try container.encode(systemPrompt, forKey: .systemPrompt)
-            try container.encode(startCommand, forKey: .startCommand)
+            // nil（起動しない）は空文字で書く。null は既定の意味になるため
+            try container.encode(startCommand ?? "", forKey: .startCommand)
         }
 
         private enum CodingKeys: String, CodingKey, CaseIterable {
@@ -169,7 +171,6 @@ public struct Config: Sendable, Equatable, Codable {
             if !(budgetSeconds > 0 && budgetSeconds <= 30) { return "formatter.budgetSeconds が範囲外です（現在 \(budgetSeconds)）。0 より大きく 30 以下にしてください。" }
             if !(temperature >= 0 && temperature <= 2) { return "formatter.temperature が範囲外です（現在 \(temperature)）。0 以上 2 以下にしてください。" }
             if !(1...4096).contains(maxTokens) { return "formatter.maxTokens が範囲外です（現在 \(maxTokens)）。1 以上 4096 以下にしてください。" }
-            if let startCommand, startCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "formatter.startCommand が空です。使わないなら null にしてください。" }
             return nil
         }
     }
