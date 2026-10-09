@@ -95,7 +95,9 @@ final class AppController: NSObject, NSApplicationDelegate {
             return item
         }
 
-        if let loadError {
+        if recorder != nil {
+            info("ホットキーの登録中です。窓を閉じるまで、音声入力は止まっています")
+        } else if let loadError {
             info("設定エラーのため停止中: \(loadError)")
         } else if demo {
             info("デモ再生（マイクと認識は使いません）")
@@ -121,7 +123,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             action("発話の後に改行する", #selector(toggleNewlineAfterUtterance)).state = config.newlineAfterUtterance ? .on : .off
             action("LLM で整える（フィラーと句読点）", #selector(toggleFormatter)).state = config.formatter.enabled ? .on : .off
         }
-        _ = action("ホットキーを登録…", #selector(registerHotkey))
+        _ = action(recorder == nil ? "ホットキーを登録…" : "ホットキーの登録の窓を前に出す", #selector(registerHotkey))
         _ = action("設定ファイルを開く", #selector(openConfigFile))
         _ = action("設定と辞書を再読み込み", #selector(reload))
         _ = action(lastUtterance == nil ? "直前の発話をコピー（まだありません）" : "直前の発話をコピー", #selector(copyLastUtterance), enabled: lastUtterance != nil)
@@ -131,7 +133,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func registerHotkey() {
-        guard recorder == nil else { return }
+        if let recorder {
+            recorder.bringToFront()
+            return
+        }
         // 窓の上で今のホットキーを押したときに、録音が始まらないようにする
         hotKey?.stop()
         hotKey = nil
@@ -148,6 +153,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             self.reload()
         }
         self.recorder = recorder
+        rebuildMenu()
         recorder.show()
     }
 

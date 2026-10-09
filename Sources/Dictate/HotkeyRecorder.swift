@@ -26,6 +26,10 @@ final class HotkeyRecorder: NSObject, NSWindowDelegate {
         window.title = "ホットキーを登録"
         window.isReleasedWhenClosed = false
         window.delegate = self
+        // 開いている間は音声入力のホットキーを外している。他のアプリの裏に隠れると、
+        // 音声入力が理由なく効かないように見えるので、常に手前に出しておく
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         let instruction = NSTextField(wrappingLabelWithString: "この窓の上で、登録したいキーの組み合わせか、マウスの中ボタンかサイドボタンを押してください。押している間だけ録音します。")
         display.font = .systemFont(ofSize: 30, weight: .semibold)
@@ -72,6 +76,10 @@ final class HotkeyRecorder: NSObject, NSWindowDelegate {
             return self.handle(event) ? nil : event
         }
         window.center()
+        bringToFront()
+    }
+
+    func bringToFront() {
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
