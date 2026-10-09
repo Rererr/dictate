@@ -39,6 +39,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 温めの要求が通った後だけ整形を試みる。モデルの読み込み中（初回はダウンロード）に 1 秒待って時間切れにしないため
     private var formatterWarm = false
     private var formatterWarmingSince: Date?
+    /// 温めの直後に測った、1 文の整形にかかる秒数。予算を超えていれば知らせ、メニューに出す
+    private var formatterSeconds: Double?
     private var formatterWarmUp: Task<Void, Never>?
     private let formatterServer = FormatterServer(logURL: AppPaths.formatterLog)
     /// 接続できないときの知らせと自動起動は、オンにしたときと起動時に一度だけ行う。
@@ -99,6 +101,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         formatterReachable = nil
         formatterWarm = false
         formatterWarmingSince = nil
+        formatterSeconds = nil
         formatterWarmUp?.cancel()
         do {
             config = try Config.load(from: AppPaths.config)
@@ -202,6 +205,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     formatterWarm = true
                     formatterWarmingSince = nil
                     if announce || waited { overlay.showToast(Messages.formatterReady) }
+                    // 温まった状態で 1 文にかかる時間を測る。予算に入らない Mac では、発話のたびに時間切れを見せる前に知らせる
+                    let started = ContinuousClock.now
+                    if (try? await client.format("えっと、本番デプロイは15時からでいいですか")) != nil, !Task.isCancelled {
+                        let seconds = (ContinuousClock.now - started).seconds
+                        formatterSeconds = seconds
+                        if seconds > config.formatter.budgetSeconds {
+                            overlay.showToast(Messages.formatterSlow(seconds: seconds, budget: config.formatter.budgetSeconds))
+                        }
+                    }
                     return
                 }
                 waited = true
@@ -258,7 +270,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case (.starting(let since), _, _): "サーバを起動中 \(Int(Date().timeIntervalSince(since))) 秒。接続できるまで整形前の文を挿入します"
             case (.failed(let detail), _, _): "\(detail)。整形前の文を挿入します"
             case (_, .some(true), let since?): "モデルを読み込み中 \(Int(Date().timeIntervalSince(since))) 秒。終わるまで整形前の文を挿入します"
-            case (_, .some(true), nil): formatterWarm ? "接続可" : "接続を確認中"
+            case (_, .some(true), nil):
+                switch (formatterWarm, formatterSeconds) {
+                case (false, _): "接続を確認中"
+                case (true, nil): "接続可"
+                case (true, let seconds?):
+                    seconds > config.formatter.budgetSeconds
+                        ? "接続可。整形に \(String(format: "%.1f", seconds)) 秒かかり、予算 \(config.formatter.budgetSeconds) 秒に入りません"
+                        : "接続可。整形に \(String(format: "%.1f", seconds)) 秒"
+                }
             case (_, .some(false), _): "接続不可。整形前の文を挿入します"
             case (_, .none, _): "接続を確認中"
             }

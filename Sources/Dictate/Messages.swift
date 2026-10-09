@@ -37,6 +37,9 @@ enum Messages {
     static let formatterStarting = "整形サーバを起動しています。接続できるまでは整形前の文を挿入します。"
     static let formatterConnected = "整形サーバに接続できました。モデルを読み込んでいます。初回はダウンロードで数分かかり、終わるまでは整形前の文を挿入します。"
     static let formatterReady = "整形の準備ができました。"
+    static func formatterSlow(seconds: Double, budget: Double) -> String {
+        "この Mac では整形に \(String(format: "%.1f", seconds)) 秒かかり、予算の \(budget) 秒に入りません。このままでは多くの発話が時間切れになります。config.json の formatter.budgetSeconds を延ばす（挿入がその分遅れます）か、小さいモデルに替えるか、整形をオフにしてください。"
+    }
     /// 起動コマンドの実行ファイルが無い。既定の mlx-lm なら入れ方まで示す
     static func formatterCommandMissing(_ name: String) -> String {
         name == "mlx_lm.server"
