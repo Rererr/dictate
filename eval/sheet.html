@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<title>dictate 評価シート</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.6 -apple-system, "Hiragino Sans", sans-serif; max-width: 920px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 20px; }
+  ol.how { padding-left: 1.4em; }
+  .row { display: grid; grid-template-columns: 3.2em 1fr; gap: 4px 12px; padding: 12px 0; border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+  .id { font-weight: 700; }
+  .script { font-size: 17px; }
+  .note { font-size: 13px; opacity: .75; }
+  textarea { grid-column: 2; width: 100%; box-sizing: border-box; font: inherit; padding: 8px; min-height: 3.4em; }
+  .row.filled .id::after { content: " ✓"; }
+  footer { position: sticky; bottom: 0; padding: 12px 0; background: Canvas; border-top: 1px solid color-mix(in srgb, currentColor 30%, transparent); display: flex; gap: 12px; align-items: center; }
+  button { font: inherit; padding: 6px 14px; }
+  #out { width: 100%; height: 8em; font: 12px ui-monospace, monospace; }
+</style>
+<h1>dictate 評価シート（肉声 20 文）</h1>
+<ol class="how">
+  <li>各行の入力欄にカーソルを置き、ホットキーを押している間に台本を読み、離す。</li>
+  <li>言い損ねたら欄を空にしてやり直す。手では直さない（挿入された文字列をそのまま採点する）。</li>
+  <li>「送信して」で終わる台本は、挿入の後に改行が 1 つ入れば正しい。</li>
+  <li>20 行を終えたら「書き出し」を押し、保存された <code>dictate-eval.json</code> を <code>eval/score.py</code> に渡す。</li>
+</ol>
+<div id="rows"></div>
+<footer>
+  <button id="export">書き出し</button>
+  <span id="progress"></span>
+</footer>
+<p class="note">保存できないときは、下の欄の内容を <code>dictate-eval.json</code> として保存する。</p>
+<textarea id="out" readonly aria-label="書き出した JSON"></textarea>
+<script>
+// script: 読み上げる文。expected: 挿入されるべき文（末尾コマンドを除く）。
+const SEND = "送信して";
+const SENTENCES = [
+  ["S1", "slack", "さっきの件、明日の朝一でレビューお願いできますか。", true, "末尾コマンド"],
+  ["S2", "slack", "PR 3113のテストが落ちているので、原因を見てからもう一度プッシュします。", false, "数値、英字"],
+  ["S3", "slack", "えっと、本番デプロイは15時からでいいですか。", false, "フィラー、数値"],
+  ["S4", "slack", "ステージングで再現できました。マイグレーションの順序が原因です。", false, "カタカナ語"],
+  ["S5", "slack", "了解です、午後に対応します。", true, "末尾コマンド"],
+  ["S6", "slack", "このファイルを送信してから、もう一度連絡します。", false, "文中の「送信して」（送らない）"],
+  ["S7", "slack", "あの、Laravelのキューが詰まっているみたいなので、ワーカーを再起動します。", false, "フィラー、辞書"],
+  ["M1", "mail", "お世話になっております。先日ご相談いただいた件について、ご連絡いたします。", false, "敬語"],
+  ["M2", "mail", "来週の水曜日、14時から30分ほどお時間をいただけますでしょうか。", false, "数値"],
+  ["M3", "mail", "えー、見積書を添付いたしましたので、ご確認をお願いいたします。", false, "フィラー"],
+  ["M4", "mail", "ご指摘の不具合は、10月15日のリリースで修正する予定です。", false, "日付"],
+  ["M5", "mail", "お手数をおかけしますが、ご検討のほどよろしくお願いいたします。", true, "末尾コマンド"],
+  ["M6", "mail", "請求金額は税込みで12万8千円です。", false, "金額"],
+  ["C1", "care", "朝食は主食が全量、副食が半分で、水分は150。", false, "単位のない数値"],
+  ["C2", "care", "血圧は120の78、脈拍は72、体温は36度5分。", false, "数値の連続"],
+  ["C3", "care", "山田さん、排泄介助、排尿あり、褥瘡なし。", false, "辞書"],
+  ["C4", "care", "経管栄養は14時に実施、特に変わりなし。", false, "辞書、数値"],
+  ["C5", "care", "えっと、入浴後に仙骨部の発赤を確認、看護師に報告。", false, "フィラー、辞書"],
+  ["C6", "care", "昼食後に嚥下体操を実施、むせ込みなし。", false, "辞書"],
+  ["C7", "care", "夜間は巡視3回、良眠されていた。", false, "辞書、数値"],
+].map(([id, style, expected, command, focus]) => ({ id, style, expected, command, focus, script: command ? expected + SEND : expected }));
+
+const rows = document.getElementById("rows");
+for (const s of SENTENCES) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<div class="id"></div><div><div class="script"></div><div class="note"></div></div><textarea rows="2"></textarea>`;
+  row.querySelector(".id").textContent = s.id;
+  row.querySelector(".script").textContent = s.script;
+  row.querySelector(".note").textContent = "見るもの: " + s.focus;
+  const area = row.querySelector("textarea");
+  area.id = "t-" + s.id;
+  area.setAttribute("aria-label", s.id + " の入力欄");
+  area.addEventListener("input", () => { row.classList.toggle("filled", area.value.trim() !== ""); progress(); });
+  rows.append(row);
+}
+function progress() {
+  const done = SENTENCES.filter(s => document.getElementById("t-" + s.id).value.trim() !== "").length;
+  document.getElementById("progress").textContent = `${done} / ${SENTENCES.length} 行に入力あり`;
+}
+progress();
+document.getElementById("export").addEventListener("click", () => {
+  const data = { exportedAt: new Date().toISOString(), rows: SENTENCES.map(s => ({ ...s, text: document.getElementById("t-" + s.id).value })) };
+  const json = JSON.stringify(data, null, 2);
+  document.getElementById("out").value = json;
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+  link.download = "dictate-eval.json";
+  link.click();
+});
+</script>
+</html>
