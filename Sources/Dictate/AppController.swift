@@ -63,8 +63,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
             requestMicrophone()
         }
-        // 文字列は kAXTrustedCheckOptionPrompt の値。定数は並行性検査を通らない
-        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        requestAccessibility()
         // マイクとアクセシビリティは OS が求めるが、認識モデルの未導入は誰も知らせない。起動時に一度だけ知らせる
         checkModel(notifyIfMissing: true)
     }
@@ -314,8 +313,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         openSettings(Self.microphonePane)
     }
 
+    /// 一覧に Dictate が無いと、利用者は付けようがない。開く前に求め直して一覧に戻す
+    /// （許可の記録を消した後や、他の方法で消された後に効く。既に一覧にあれば何も変わらない）。
     @objc private func openAccessibilitySettings() {
+        requestAccessibility()
         openSettings(Self.accessibilityPane)
+    }
+
+    private func requestAccessibility() {
+        // 文字列は kAXTrustedCheckOptionPrompt の値。定数は並行性検査を通らない
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
     }
 
     @objc private func openDictationSettings() {
@@ -343,7 +350,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         // 消すと一覧からも消える。求め直すと一覧に戻る
-        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        requestAccessibility()
         overlay.showToast(Messages.accessibilityReset)
         openSettings(Self.accessibilityPane, afterToast: true)
     }
