@@ -35,6 +35,13 @@ enum Messages {
     static let formatterUnreachable = "整形サーバに接続できません。接続できるまでは整形前の文を挿入します。サーバを起動するか、config.json の formatter.startCommand に起動コマンドを書くと、オンにしたときにアプリが起動します。"
     static let formatterStarting = "整形サーバを起動しています。接続できるまでは整形前の文を挿入します。"
     static let formatterReady = "整形サーバに接続できました。"
+    static let formatterLoading = "整形サーバに接続できましたが、モデルの読み込みが終わっていません。初回はダウンロードで数分かかります。終わるまでは整形前の文を挿入します。"
+    /// 起動コマンドの実行ファイルが無い。既定の mlx-lm なら入れ方まで示す
+    static func formatterCommandMissing(_ name: String) -> String {
+        name == "mlx_lm.server"
+            ? "整形サーバの mlx-lm が入っていません。ターミナルで brew install mlx-lm を実行してから、もう一度「LLM で整える」をオンにしてください。手引きはメニューの「ローカル LLM の手引きを開く」にあります。"
+            : "整形サーバのコマンド「\(name)」が見つかりません。config.json の formatter.startCommand を確かめてください。"
+    }
     static let formatterStartTimedOut = "整形サーバの待ち受けが 60 秒たっても開きません。startCommand の --port と endpoint が合っているかを確かめ、メニューの「整形サーバのログを開く」で原因を見てください。"
     static func formatterStartFailed(_ detail: String) -> String { "整形サーバを起動できませんでした（\(detail)）。メニューの「整形サーバのログを開く」で原因を確かめてください。" }
     /// detail は「サーバの起動に失敗（終了コード 127）」「サーバが動作中に終了（シグナル 9）」の形で届く。

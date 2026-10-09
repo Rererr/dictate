@@ -124,8 +124,9 @@ public struct Config: Sendable, Equatable, Codable {
         /// nil なら組み込みのプロンプトを使う。変えても、検証を通るのはフィラーの削除と句読点の変更だけ。
         public var systemPrompt: String?
         /// 整形をオンにしたときに接続できなければ、アプリがこのコマンドでサーバを起動する（ログインシェルで実行）。
-        /// nil なら起動せず、接続できないと知らせるだけ。
-        public var startCommand: String?
+        /// 既定は mlx-lm で既定のモデルを既定のポートに立てるコマンド。設定に null を書くと起動せず、接続できないと知らせるだけ。
+        public var startCommand: String? = Self.defaultStartCommand
+        public static let defaultStartCommand = "mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
 
         public init() {}
 
@@ -140,7 +141,10 @@ public struct Config: Sendable, Equatable, Codable {
             maxTokens = try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? maxTokens
             enableThinking = try container.decodeIfPresent(Bool.self, forKey: .enableThinking) ?? enableThinking
             systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
-            startCommand = try container.decodeIfPresent(String.self, forKey: .startCommand)
+            // 項目が無ければ既定、null なら「起動しない」。decodeIfPresent は両方 nil にするので分ける
+            if container.contains(.startCommand) {
+                startCommand = try container.decodeNil(forKey: .startCommand) ? nil : try container.decode(String.self, forKey: .startCommand)
+            }
         }
 
         public func encode(to encoder: Encoder) throws {

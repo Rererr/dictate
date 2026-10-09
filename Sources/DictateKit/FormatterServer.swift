@@ -25,6 +25,30 @@ public final class FormatterServer {
     /// 監視シェルの pid。サーバ本体はその子になる。
     public var processIdentifier: Int32? { process?.processIdentifier }
 
+    /// コマンドの先頭の語（実行ファイル名）。
+    nonisolated public static func executableName(of command: String) -> String {
+        String(command.split(whereSeparator: \.isWhitespace).first ?? "")
+    }
+
+    /// 起動と同じログインシェルで、コマンドの先頭の語が見つかるかを確かめる。
+    nonisolated public static func isExecutableAvailable(_ command: String) async -> Bool {
+        let name = executableName(of: command)
+        guard !name.isEmpty else { return false }
+        return await Task.detached {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            var environment = ProcessInfo.processInfo.environment
+            environment["DICTATE_EXECUTABLE"] = name
+            process.environment = environment
+            process.arguments = ["-lc", "command -v -- \"$DICTATE_EXECUTABLE\" >/dev/null"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            do { try process.run() } catch { return false }
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        }.value
+    }
+
     /// ログインシェル（.zprofile の PATH）で起動する。ログは起動のたびに作り直す。
     /// 起動中か動作中なら何もせず false を返す。
     ///

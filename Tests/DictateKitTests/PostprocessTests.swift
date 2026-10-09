@@ -209,12 +209,17 @@ import Testing
         #expect(loaded.formatter.enabled)
     }
 
-    @Test func 起動コマンドは無ければnullで書き出し書けば読み直せる() throws {
+    @Test func 起動コマンドは項目が無ければ既定でnullなら起動しない() throws {
+        #expect(try Config.load(from: write("{}")).formatter.startCommand == Config.Formatter.defaultStartCommand)
+        #expect(try Config.load(from: write(#"{"formatter": {"startCommand": null}}"#)).formatter.startCommand == nil)
         let url = try write("{}")
         try Config.update(at: url)
+        #expect(try String(contentsOf: url, encoding: .utf8).contains(#""startCommand" : "mlx_lm.server"#))
+        try Config.update(at: url) { $0.formatter.startCommand = "my_server --port 8124" }
+        #expect(try Config.load(from: url).formatter.startCommand == "my_server --port 8124")
+        try Config.update(at: url) { $0.formatter.startCommand = nil }
         #expect(try String(contentsOf: url, encoding: .utf8).contains(#""startCommand" : null"#))
-        try Config.update(at: url) { $0.formatter.startCommand = "mlx_lm.server --port 8124" }
-        #expect(try Config.load(from: url).formatter.startCommand == "mlx_lm.server --port 8124")
+        #expect(try Config.load(from: url).formatter.startCommand == nil)
         let blank = try write(#"{"formatter": {"startCommand": " "}}"#)
         #expect(throws: Config.LoadError.self) { try Config.load(from: blank) }
     }
@@ -451,6 +456,13 @@ import Testing
         #expect(try !server.start(command: "sleep 30"))
         #expect(server.processIdentifier == pid)
         server.stop()
+    }
+
+    @Test func 起動コマンドの実行ファイルの有無をログインシェルで確かめる() async {
+        #expect(FormatterServer.executableName(of: "mlx_lm.server --model x --port 8124") == "mlx_lm.server")
+        #expect(await FormatterServer.isExecutableAvailable("ls -la"))
+        #expect(await !FormatterServer.isExecutableAvailable("dictate_nonexistent_server_xyz --port 1"))
+        #expect(await !FormatterServer.isExecutableAvailable(""))
     }
 
     @MainActor @Test func 諦めると止めてから失敗として残す() async throws {

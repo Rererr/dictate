@@ -143,17 +143,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// サーバを起動し、待ち受けが開くまで 1 秒ごとに確かめる。
     /// 待ち受けはモデルの読み込みより先に開くので、開かないのはポート違いかハングであり、60 秒で諦める。
     private func startFormatterServer(_ command: String) {
-        let launched: Bool
-        do {
-            launched = try formatterServer.start(command: command)
-        } catch {
-            overlay.showToast(Messages.formatterStartFailed(error.localizedDescription))
-            return
-        }
-        guard launched else { return }  // 起動中か動作中
-        overlay.showToast(Messages.formatterStarting)
-        let client = LLMClient(config.formatter)
         Task {
+            // 実行ファイルが無いときは、起動して 127 で落とすより先に入れ方を示す
+            guard await FormatterServer.isExecutableAvailable(command) else {
+                overlay.showToast(Messages.formatterCommandMissing(FormatterServer.executableName(of: command)))
+                return
+            }
+            guard config.formatter.enabled else { return }
+            let launched: Bool
+            do {
+                launched = try formatterServer.start(command: command)
+            } catch {
+                overlay.showToast(Messages.formatterStartFailed(error.localizedDescription))
+                return
+            }
+            guard launched else { return }  // 起動中か動作中
+            overlay.showToast(Messages.formatterStarting)
+            let client = LLMClient(config.formatter)
             for _ in 0..<60 {
                 try? await Task.sleep(for: .seconds(1))
                 // オフにされた（stopped）か、自分から終わった（failed。知らせは onExit）
@@ -162,8 +168,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     formatterServer.markRunning()
                     formatterReachable = true
                     overlay.showToast(Messages.formatterReady)
-                    // 最初の発話が予算に入るように、ここで一度温める（モデルの読み込み中なら空振りしてよい）
-                    _ = try? await client.format("えっと、準備です")
+                    // 最初の発話が予算に入るように、ここで一度温める。終わらなければモデルの読み込み中（初回はダウンロード）
+                    if (try? await client.format("えっと、準備です")) == nil, case .running = formatterServer.state {
+                        overlay.showToast(Messages.formatterLoading)
+                    }
                     return
                 }
             }
@@ -172,6 +180,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             formatterReachable = false
             overlay.showToast(Messages.formatterStartTimedOut)
         }
+    }
+
+    @objc private func openLocalLLMGuide() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/Rererr/dictate/blob/main/docs/local-llm.md")!)
     }
 
     @objc private func startFormatterServerFromMenu() {
@@ -258,6 +270,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if FileManager.default.fileExists(atPath: AppPaths.formatterLog.path) {
                     _ = action("整形サーバのログを開く", #selector(openFormatterLog))
                 }
+                _ = action("ローカル LLM の手引きを開く", #selector(openLocalLLMGuide))
             }
         }
         _ = action(recorder == nil ? "ホットキーを登録…" : "ホットキーの登録の窓を前に出す", #selector(registerHotkey))

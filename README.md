@@ -19,7 +19,7 @@ A push-to-talk dictation app for macOS (Japanese). Hold a hotkey, speak, and the
 
 - 日本語専用。認識のロケール、読み辞書、末尾コマンド、フィラーの規則が日本語に固定されている。
 - 配布用のバイナリは無い。自分で組んで、自分の Mac で署名する。
-- 計測は作者 1 人の声と 1 台の Mac でのもの（肉声 20 文で CER 2.7%、キーを離してから確定まで中央値 0.10 秒）。
+- 計測は作者 1 人の声と 1 台の Mac でのもの（肉声 20 文で CER 2.7%、キーを離してから確定まで中央値 0.10 秒）。導入の手順は 2 台目の Mac（macOS 27）で Homebrew 経路を通して確かめた。
 - 認識誤りの自動補正はしない。読み辞書で直す（理由と、試して退けた方式は `docs/design.md` の ADR-10）。
 - 未確認の事項と既知の限界は `docs/design.md` の §9 にある。
 
@@ -262,7 +262,7 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
     "maxTokens": 512,
     "enableThinking": false,
     "systemPrompt": null,
-    "startCommand": null
+    "startCommand": "mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
   },
   "history": { "enabled": true },
   "alwaysPasteBundleIds": [],
@@ -280,13 +280,13 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
 
 LLM 整形（フィラーの除去と句読点）は、手元で動かすサーバに文を送って結果を受け取る。
 はじめての人向けの手順と、モデルをどう選んだかは [docs/local-llm.md](docs/local-llm.md) にある。
-メニューの「LLM で整える（フィラーと句読点）」をオンにしたとき、サーバに接続できなければ、`formatter.startCommand` があればそのコマンドでアプリがサーバを起動し、無ければ接続できないことをトーストで知らせる。
+メニューの「LLM で整える（フィラーと句読点）」をオンにしたとき、サーバに接続できなければ、`formatter.startCommand` のコマンドでアプリがサーバを起動する。既定は mlx-lm で既定のモデルを立てるコマンドで、mlx-lm が無ければ入れ方をトーストで知らせる。`null` にすると起動せず、接続できないことだけを知らせる。
 アプリが起動したサーバは、オフにしたときと終了時にアプリが止める。
 `budgetSeconds` 以内に結果が届かなければ、整形前の文を挿入する。遅いモデルを使うなら、この値を延ばす。
 `systemPrompt` を書くと組み込みのプロンプトを置き換える。ただし、挿入されるのは「フィラーの削除と句読点の変更だけ」の検証を通った出力に限られ、それ以外の書き換えは捨てて整形前の文を挿入する。
 
 ```sh
-# startCommand に書くコマンドの例（手で立てるときも同じ）
+# startCommand の既定値（手で立てるときも同じ）
 mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
 ```
 
