@@ -35,8 +35,8 @@ enum Messages {
     // 整形サーバ
     static let formatterUnreachable = "整形サーバに接続できません。接続できるまでは整形前の文を挿入します。サーバを起動するか、config.json の formatter.startCommand に起動コマンドを書くと、オンにしたときにアプリが起動します。"
     static let formatterStarting = "整形サーバを起動しています。接続できるまでは整形前の文を挿入します。"
-    static let formatterReady = "整形サーバに接続できました。"
-    static let formatterLoading = "整形サーバに接続できましたが、モデルの読み込みが終わっていません。初回はダウンロードで数分かかります。終わるまでは整形前の文を挿入します。"
+    static let formatterConnected = "整形サーバに接続できました。モデルを読み込んでいます。初回はダウンロードで数分かかり、終わるまでは整形前の文を挿入します。"
+    static let formatterReady = "整形の準備ができました。"
     /// 起動コマンドの実行ファイルが無い。既定の mlx-lm なら入れ方まで示す
     static func formatterCommandMissing(_ name: String) -> String {
         name == "mlx_lm.server"

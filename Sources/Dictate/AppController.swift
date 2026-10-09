@@ -36,6 +36,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let minimumHold = Duration.milliseconds(300)
     private var loadError: String?
     private var formatterReachable: Bool?
+    /// 温めの要求が通った後だけ整形を試みる。モデルの読み込み中（初回はダウンロード）に 1 秒待って時間切れにしないため
+    private var formatterWarm = false
+    private var formatterWarmingSince: Date?
+    private var formatterWarmUp: Task<Void, Never>?
     private let formatterServer = FormatterServer(logURL: AppPaths.formatterLog)
     /// 接続できないときの知らせと自動起動は、オンにしたときと起動時に一度だけ行う。
     /// 他の設定を切り替えるたびには繰り返さず、やり直しはメニューの「整形サーバを起動」で本人が行う
@@ -93,6 +97,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hotKey = nil
         loadError = nil
         formatterReachable = nil
+        formatterWarm = false
+        formatterWarmingSince = nil
+        formatterWarmUp?.cancel()
         do {
             config = try Config.load(from: AppPaths.config)
             dictionary = FileManager.default.fileExists(atPath: AppPaths.dictionary.path)
@@ -127,6 +134,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // 本人が立てたサーバに届いたなら、前の失敗の表示は要らない
                 if case .failed = formatterServer.state { formatterServer.stop() }
                 formatterAttempted = false
+                warmUpFormatter(client, announce: false)
                 return
             }
             guard !formatterAttempted else { return }
@@ -166,11 +174,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if await client.isReachable() {
                     formatterServer.markRunning()
                     formatterReachable = true
-                    overlay.showToast(Messages.formatterReady)
-                    // 最初の発話が予算に入るように、ここで一度温める。終わらなければモデルの読み込み中（初回はダウンロード）
-                    if (try? await client.format("えっと、準備です")) == nil, case .running = formatterServer.state {
-                        overlay.showToast(Messages.formatterLoading)
-                    }
+                    // 待ち受けはモデルの読み込みより先に開く。読み込みが終わるまでは整形しない
+                    overlay.showToast(Messages.formatterConnected)
+                    warmUpFormatter(client, announce: true)
                     return
                 }
             }
@@ -178,6 +184,34 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             formatterServer.fail("サーバの待ち受けが 60 秒たっても開かない")
             formatterReachable = false
             overlay.showToast(Messages.formatterStartTimedOut)
+        }
+    }
+
+    /// 短い要求が通るまで繰り返し、通ったら整形を始める。
+    /// 読み込み中のサーバは応答を待たせるか失敗を返すので、10 秒おきにやり直す。オフにされるか接続が切れたら止める。
+    /// announce が真なら、準備ができたときに知らせる（起動から待たせた場合）。本人が立てた温かいサーバでは黙って始める。
+    private func warmUpFormatter(_ client: LLMClient, announce: Bool) {
+        formatterWarmUp?.cancel()
+        formatterWarm = false
+        formatterWarmingSince = Date()
+        formatterWarmUp = Task {
+            var waited = false
+            while !Task.isCancelled, config.formatter.enabled {
+                if (try? await client.format("えっと、準備です")) != nil {
+                    guard !Task.isCancelled else { return }
+                    formatterWarm = true
+                    formatterWarmingSince = nil
+                    if announce || waited { overlay.showToast(Messages.formatterReady) }
+                    return
+                }
+                waited = true
+                guard await client.isReachable() else {
+                    formatterReachable = false
+                    formatterWarmingSince = nil
+                    return
+                }
+                try? await Task.sleep(for: .seconds(10))
+            }
         }
     }
 
@@ -220,12 +254,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             info("マイク: \(microphoneStatus.label)")
             info("アクセシビリティ: \(accessibilityTrusted ? "許可済み" : "未許可（挿入できません）")")
             info("日本語の認識モデル: \(modelInstalled.map { $0 ? "導入済み" : "未導入（認識できません）" } ?? "確認中")")
-            let reachability = switch (formatterServer.state, formatterReachable) {
-            case (.starting(let since), _): "サーバを起動中 \(Int(Date().timeIntervalSince(since))) 秒。接続できるまで整形前の文を挿入します"
-            case (.failed(let detail), _): "\(detail)。整形前の文を挿入します"
-            case (_, .some(true)): "接続可"
-            case (_, .some(false)): "接続不可。整形前の文を挿入します"
-            case (_, .none): "接続を確認中"
+            let reachability = switch (formatterServer.state, formatterReachable, formatterWarmingSince) {
+            case (.starting(let since), _, _): "サーバを起動中 \(Int(Date().timeIntervalSince(since))) 秒。接続できるまで整形前の文を挿入します"
+            case (.failed(let detail), _, _): "\(detail)。整形前の文を挿入します"
+            case (_, .some(true), let since?): "モデルを読み込み中 \(Int(Date().timeIntervalSince(since))) 秒。終わるまで整形前の文を挿入します"
+            case (_, .some(true), nil): formatterWarm ? "接続可" : "接続を確認中"
+            case (_, .some(false), _): "接続不可。整形前の文を挿入します"
+            case (_, .none, _): "接続を確認中"
             }
             info(config.formatter.enabled ? "整形: 有効（\(reachability)）" : "整形: 無効")
             info("履歴: \(config.history.enabled ? "有効" : "無効")")
@@ -542,7 +577,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let id = UUID().uuidString
         var text = post.body
         var formatNote: String?
-        if config.formatter.enabled, !post.body.isEmpty {
+        // 読み込み中や接続不可のときは試みない（1 秒待たせて時間切れにしない）。理由はメニューの状態表示にある
+        if config.formatter.enabled, formatterWarm, !post.body.isEmpty {
             overlay.showCaption(.working, Messages.formatting)
             let client = LLMClient(config.formatter)
             let body = post.body
