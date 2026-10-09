@@ -15,7 +15,8 @@ enum Messages {
     static let microphoneDenied = "マイクの許可がありません。システム設定を開くので、プライバシーとセキュリティ > マイクで、Dictate を許可してください。"
 
     // 許可の付け直し
-    static let accessibilityReset = "アクセシビリティの許可の記録を消しました。システム設定を開くので、一覧で Dictate をオンにしてください。"
+    static let accessibilityReset = "アクセシビリティの許可の記録を消しました。起動し直して一覧に Dictate を戻すので、出てきたダイアログから設定を開き、一覧でオンにしてください。"
+    static func relaunchFailed(_ detail: String) -> String { "起動し直せませんでした（\(detail)）。メニューから終了し、もう一度開いてください。" }
     static func accessibilityResetFailed(_ detail: String) -> String { "許可の記録を消せませんでした（\(detail)）。ターミナルで tccutil reset Accessibility com.rererr.dictate を実行してください。" }
 
     // 起動時の点検

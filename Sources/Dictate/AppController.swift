@@ -313,10 +313,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         openSettings(Self.microphonePane)
     }
 
-    /// 一覧に Dictate が無いと、利用者は付けようがない。開く前に求め直して一覧に戻す
-    /// （許可の記録を消した後や、他の方法で消された後に効く。既に一覧にあれば何も変わらない）。
     @objc private func openAccessibilitySettings() {
-        requestAccessibility()
         openSettings(Self.accessibilityPane)
     }
 
@@ -329,7 +326,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         openSettings(Self.dictationPane)
     }
 
-    /// 自分の許可の記録を OS から消し、求め直して一覧に戻してから、付け直す画面を開く。
+    /// 自分の許可の記録を OS から消してから、起動し直す。
+    /// 記録を消すと一覧からも消え、同じプロセスからの求め直しは効かないことがある（別の Mac で実測）。
+    /// 起動時の求め直しは確実に一覧へ戻すので、再起動で付け直せる状態にする。
     @objc private func resetAccessibility() {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
@@ -349,10 +348,28 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             overlay.showToast(Messages.accessibilityResetFailed(detail.isEmpty ? "tccutil が \(process.terminationStatus) で終了" : detail))
             return
         }
-        // 消すと一覧からも消える。求め直すと一覧に戻る
-        requestAccessibility()
         overlay.showToast(Messages.accessibilityReset)
-        openSettings(Self.accessibilityPane, afterToast: true)
+        Task {
+            try? await Task.sleep(for: .seconds(2))  // 先にトーストを読めるように
+            relaunch()
+        }
+    }
+
+    /// 自分を終了し、別のプロセスから開き直す。終了直後は LaunchServices が open を拒むことがあるので、数回まで試す。
+    private func relaunch() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "for _ in 1 2 3 4 5; do sleep 1; open \"$DICTATE_BUNDLE\" && exit; done"]
+        var environment = ProcessInfo.processInfo.environment
+        environment["DICTATE_BUNDLE"] = Bundle.main.bundleURL.path
+        process.environment = environment
+        do {
+            try process.run()
+        } catch {
+            overlay.showToast(Messages.relaunchFailed(error.localizedDescription))
+            return
+        }
+        NSApp.terminate(nil)
     }
 
     @objc private func registerHotkey() {

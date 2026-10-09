@@ -222,6 +222,11 @@ import Testing
         try Config.update(at: url) { $0.formatter.startCommand = nil }
         #expect(try String(contentsOf: url, encoding: .utf8).contains(#""startCommand" : """#))
         #expect(try Config.load(from: url).formatter.startCommand == nil)
+        try Config.update(at: url) { $0.formatter.startCommand = " \n" }
+        #expect(try String(contentsOf: url, encoding: .utf8).contains(#""startCommand" : """#))
+        var config = Config()
+        config.formatter.startCommand = "  "
+        #expect(config.formatter.startCommand == nil)
     }
 
     @Test func 空の配列は改行を挟まずに書き出す() throws {

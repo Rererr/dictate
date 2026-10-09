@@ -156,7 +156,7 @@ To uninstall, quit from the menu and delete the cloned directory and `~/Library/
 3. The top of the menu shows the status of the microphone, Accessibility, and the Japanese recognition model. When something is missing, the menu also offers an item that opens the relevant setting (the model row updates the next time you open the menu after changing the setting). A missing model is also announced at launch.
 4. Put the cursor in a text field, hold ⌃⌥⌘D while speaking, then release.
 
-With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Choose "アクセシビリティの許可を付け直す" in the menu (it runs `tccutil reset Accessibility com.rererr.dictate` and opens the setting), or create a self-signed certificate once with `scripts/make-cert.sh` so that rebuilds keep the permission.
+With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Choose "アクセシビリティの許可を付け直す" in the menu (it runs `tccutil reset Accessibility com.rererr.dictate` and relaunches the app so that it reappears in the list), or create a self-signed certificate once with `scripts/make-cert.sh` so that rebuilds keep the permission.
 
 ### Install with an LLM
 
@@ -184,7 +184,7 @@ Finally, tell me the default hotkey, where the settings files live, and how to u
 署名は、キーチェーンに自己署名の証明書「Dictate Dev」があればそれを使い、無ければアドホック署名になる。
 アドホック署名では、組み直すたびに OS が別のアプリとして扱うので、許可を付け直す必要がある。
 その場合、一覧の Dictate はオンに見えても効かない。
-メニューの「アクセシビリティの許可を付け直す」を選ぶと、記録を消してから設定を開く（ターミナルなら `tccutil reset Accessibility com.rererr.dictate`）。
+メニューの「アクセシビリティの許可を付け直す」を選ぶと、記録を消してからアプリが起動し直し、出てきたダイアログから設定を開いて一覧でオンにする（ターミナルなら `tccutil reset Accessibility com.rererr.dictate` の後に起動し直す）。
 
 証明書を作っておくと、組み直しても許可が保たれる。
 この Mac の中だけで有効な、コード署名用の自己署名証明書で、次の 1 行で作れる。

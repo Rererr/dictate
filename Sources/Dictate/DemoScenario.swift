@@ -60,6 +60,7 @@ struct DemoScenario {
         toast("デモ: 整形サーバの待ち受けが開かない", Messages.formatterStartTimedOut),
         toast("デモ: アクセシビリティの許可を付け直した", Messages.accessibilityReset),
         toast("デモ: アクセシビリティの許可を消せない", Messages.accessibilityResetFailed("No such bundle identifier \"com.rererr.dictate\"")),
+        toast("デモ: 起動し直せない", Messages.relaunchFailed("“/bin/sh”を開けませんでした。")),
         .init(title: "デモ: セキュア入力中", steps: [Step(after: .zero, action: .toast(Messages.secureInput))]),
         .init(title: "デモ: 話している間にセキュア入力へ", steps: speaking + ending(Messages.secureInputAtInsert)),
         .init(title: "デモ: 処理中に押した（字幕の上にトースト）", steps: speaking + [Step(after: .milliseconds(50), action: .toast(Messages.busy))] + ending(after: .seconds(3))),

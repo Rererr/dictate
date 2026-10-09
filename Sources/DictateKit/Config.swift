@@ -126,7 +126,10 @@ public struct Config: Sendable, Equatable, Codable {
         /// 整形をオンにしたときに接続できなければ、アプリがこのコマンドでサーバを起動する（ログインシェルで実行）。
         /// 既定は mlx-lm で既定のモデルを既定のポートに立てるコマンド。null は既定（systemPrompt と同じ扱い）。
         /// 空文字なら起動せず、接続できないと知らせるだけ（読み込み時に nil にする）。
-        public var startCommand: String? = Self.defaultStartCommand
+        public var startCommand: String? = Self.defaultStartCommand {
+            // 空白だけは「起動しない」。読み込みと同じ正規化を、設定変更の経路にも掛ける
+            didSet { if let command = startCommand, command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { startCommand = nil } }
+        }
         public static let defaultStartCommand = "mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
 
         public init() {}
@@ -142,7 +145,7 @@ public struct Config: Sendable, Equatable, Codable {
             maxTokens = try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? maxTokens
             enableThinking = try container.decodeIfPresent(Bool.self, forKey: .enableThinking) ?? enableThinking
             systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
-            // 無い・null は既定。空白だけなら「起動しない」
+            // 無い・null は既定。空白だけなら「起動しない」（init の中では didSet が走らないので、ここでも正規化する）
             if let command = try container.decodeIfPresent(String.self, forKey: .startCommand) {
                 startCommand = command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : command
             }
