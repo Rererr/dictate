@@ -5,7 +5,7 @@ import DictateKit
 import SpeechCore
 
 @MainActor
-final class AppController: NSObject, NSApplicationDelegate {
+final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private struct Recording {
         let startedAt: Date
         let started: ContinuousClock.Instant
@@ -25,6 +25,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let microphone = MicrophoneCapture()
     private let inserter = Inserter()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let menu = NSMenu()
 
     private var state = State.idle
     private var config = Config()
@@ -35,6 +36,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private static let minimumHold = Duration.milliseconds(300)
     private var loadError: String?
     private var formatterReachable: Bool?
+    /// nil は確認中。
+    private var modelInstalled: Bool?
     private var lastUtterance: String?
 
     init(demo: Bool) {
@@ -43,13 +46,32 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem.button?.image = NSImage(systemSymbolName: "mic", accessibilityDescription: "Dictate")
+        // メニューは開く直前（menuNeedsUpdate）にだけ組む。許可の状態を開いた時点の値で出せる
+        menu.delegate = self
+        statusItem.menu = menu
         reload()
         guard !demo else { return }
         if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
-            Task { _ = await AVCaptureDevice.requestAccess(for: .audio) }
+            requestMicrophone()
         }
         // 文字列は kAXTrustedCheckOptionPrompt の値。定数は並行性検査を通らない
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        // マイクとアクセシビリティは OS が求めるが、認識モデルの未導入は誰も知らせない。起動時に一度だけ知らせる
+        checkModel(notifyIfMissing: true)
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        buildMenu()
+        // 結果は非同期に届く。メニューの追跡中は MainActor の Task が動かないので、次に開いたときに反映される
+        if !demo { checkModel(notifyIfMissing: false) }
+    }
+
+    /// 日本語の認識モデルが入っているかを確かめる。
+    private func checkModel(notifyIfMissing: Bool) {
+        Task {
+            modelInstalled = await LiveTranscriber().isModelInstalled()
+            if notifyIfMissing, modelInstalled == false { overlay.showToast(Messages.modelNotInstalled) }
+        }
     }
 
     // MARK: - 設定
@@ -72,17 +94,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             loadError = error.localizedDescription
             overlay.showToast(Messages.loadFailed(error.localizedDescription))
         }
-        rebuildMenu()
         guard loadError == nil, config.formatter.enabled else { return }
         let client = LLMClient(config.formatter)
-        Task {
-            formatterReachable = await client.isReachable()
-            rebuildMenu()
-        }
+        Task { formatterReachable = await client.isReachable() }
     }
 
-    private func rebuildMenu() {
-        let menu = NSMenu()
+    private func buildMenu() {
+        menu.removeAllItems()
+        let accessibilityTrusted = AXIsProcessTrusted()
         func info(_ title: String) {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.isEnabled = false
@@ -103,6 +122,9 @@ final class AppController: NSObject, NSApplicationDelegate {
             info("デモ再生（マイクと認識は使いません）")
         } else {
             info("ホットキー: \(config.hotkey.displayName) を押している間")
+            info("マイク: \(microphoneStatus.label)")
+            info("アクセシビリティ: \(accessibilityTrusted ? "許可済み" : "未許可（挿入できません）")")
+            info("日本語の認識モデル: \(modelInstalled.map { $0 ? "導入済み" : "未導入（認識できません）" } ?? "確認中")")
             let reachability = switch formatterReachable {
             case .some(true): "接続可"
             case .some(false): "接続不可。整形前の文を挿入します"
@@ -113,6 +135,23 @@ final class AppController: NSObject, NSApplicationDelegate {
             info("辞書: \(dictionary.isEmpty ? "なし" : "読み込み済み")")
         }
         menu.addItem(.separator())
+        if !demo {
+            // 足りないものがあるときだけ、その設定へ行く項目を出す
+            var fixes: [(title: String, selector: Selector)] = []
+            switch microphoneStatus {
+            case .notDetermined: fixes.append(("マイクの許可を求める", #selector(requestMicrophone)))
+            case .denied: fixes.append(("マイクの設定を開く", #selector(openMicrophoneSettings)))
+            case .authorized, .restricted: break
+            }
+            if !accessibilityTrusted {
+                fixes.append(("アクセシビリティの設定を開く", #selector(openAccessibilitySettings)))
+                // アドホック署名で組み直すと、一覧ではオンのまま効かなくなる。記録を消して付け直す
+                fixes.append(("アクセシビリティの許可を付け直す（オンに見えて効かないとき）", #selector(resetAccessibility)))
+            }
+            if modelInstalled == false { fixes.append(("音声入力の設定を開く（日本語を追加）", #selector(openDictationSettings))) }
+            for fix in fixes { _ = action(fix.title, fix.selector) }
+            if !fixes.isEmpty { menu.addItem(.separator()) }
+        }
         if demo {
             for (index, scenario) in DemoScenario.all.enumerated() {
                 action(scenario.title, #selector(playDemo(_:))).tag = index
@@ -129,7 +168,73 @@ final class AppController: NSObject, NSApplicationDelegate {
         _ = action(lastUtterance == nil ? "直前の発話をコピー（まだありません）" : "直前の発話をコピー", #selector(copyLastUtterance), enabled: lastUtterance != nil)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        statusItem.menu = menu
+    }
+
+    private enum MicrophoneStatus {
+        case authorized, notDetermined, denied
+        /// 管理者の設定で禁じられている。利用者はシステム設定で変えられない。
+        case restricted
+
+        var label: String {
+            switch self {
+            case .authorized: "許可済み"
+            case .notDetermined: "未許可（まだ求めていません）"
+            case .denied: "未許可（録音できません）"
+            case .restricted: "管理者の設定で使えません"
+            }
+        }
+    }
+
+    private var microphoneStatus: MicrophoneStatus {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: .authorized
+        case .notDetermined: .notDetermined
+        case .denied: .denied
+        case .restricted: .restricted
+        @unknown default: .denied
+        }
+    }
+
+    @objc private func requestMicrophone() {
+        Task { _ = await AVCaptureDevice.requestAccess(for: .audio) }
+    }
+
+    @objc private func openMicrophoneSettings() {
+        openSettings(Self.microphonePane)
+    }
+
+    @objc private func openAccessibilitySettings() {
+        openSettings(Self.accessibilityPane)
+    }
+
+    @objc private func openDictationSettings() {
+        openSettings(Self.dictationPane)
+    }
+
+    /// 自分の許可の記録を OS から消し、求め直して一覧に戻してから、付け直す画面を開く。
+    @objc private func resetAccessibility() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "Accessibility", "com.rererr.dictate"]
+        let stderr = Pipe()
+        process.standardError = stderr
+        do {
+            try process.run()
+        } catch {
+            overlay.showToast(Messages.accessibilityResetFailed(error.localizedDescription))
+            return
+        }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let detail = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            overlay.showToast(Messages.accessibilityResetFailed(detail.isEmpty ? "tccutil が \(process.terminationStatus) で終了" : detail))
+            return
+        }
+        // 消すと一覧からも消える。求め直すと一覧に戻る
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        overlay.showToast(Messages.accessibilityReset)
+        openSettings(Self.accessibilityPane, afterToast: true)
     }
 
     @objc private func registerHotkey() {
@@ -153,7 +258,6 @@ final class AppController: NSObject, NSApplicationDelegate {
             self.reload()
         }
         self.recorder = recorder
-        rebuildMenu()
         recorder.show()
     }
 
@@ -222,7 +326,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             overlay.showToast(Messages.microphoneDenied)
-            openPrivacySettings("Privacy_Microphone")
+            openSettings(Self.microphonePane, afterToast: true)
             return
         }
         let audio: AsyncStream<AudioChunk>
@@ -325,7 +429,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         // 話している間にパスワード欄へフォーカスが移った場合
         guard !IsSecureEventInputEnabled() else {
             lastUtterance = text.isEmpty ? lastUtterance : text
-            rebuildMenu()
             fail(Messages.secureInputAtInsert)
             return
         }
@@ -350,7 +453,6 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         overlay.closeCaption()
         lastUtterance = text.isEmpty ? lastUtterance : text
-        rebuildMenu()
         let recorded = record(UtteranceRecord(
             id: id, startedAt: recording.startedAt, recordingSeconds: (released - recording.started).seconds,
             raw: raw, runs: accumulator.runs, post: post, inserted: insertion.method == .none ? "" : text,
@@ -370,12 +472,21 @@ final class AppController: NSObject, NSApplicationDelegate {
         case (.ax, let reason?): overlay.showToast(post.command == .send ? Messages.unverifiedNotSent : reason)
         case (.ax, nil), (.paste, _): if let formatNote { overlay.showToast(formatNote) }
         }
-        if !AXIsProcessTrusted() { openPrivacySettings("Privacy_Accessibility") }
+        if !AXIsProcessTrusted() { openSettings(Self.accessibilityPane, afterToast: true) }
     }
 
-    /// 許可が無いと知らせた後、少し置いて該当の設定を開く。先にトーストを読めるように間を空ける。
-    private func openPrivacySettings(_ pane: String) {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else { return }
+    private static let microphonePane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+    private static let accessibilityPane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    /// キーボードの設定を、音声入力の節が見える位置で開く（macOS 27 で確認）
+    private static let dictationPane = "x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Dictation"
+
+    /// システム設定の該当の画面を開く。トーストの後に開くときは、先に読めるように少し置く。
+    private func openSettings(_ pane: String, afterToast: Bool = false) {
+        guard let url = URL(string: pane) else { return }
+        guard afterToast else {
+            NSWorkspace.shared.open(url)
+            return
+        }
         Task {
             try? await Task.sleep(for: .milliseconds(500))
             NSWorkspace.shared.open(url)

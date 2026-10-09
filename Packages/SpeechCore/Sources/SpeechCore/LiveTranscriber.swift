@@ -21,9 +21,7 @@ public struct LiveTranscriber: Sendable {
             attributeOptions: [.audioTimeRange, .transcriptionConfidence]
         )
         // 未導入のときに取得を要求しない。ダウンロードは利用者の承認事項。
-        // AssetInventory.status は導入済みで認識できる状態でも .supported を返すので使わない
-        let target = locale.identifier(.bcp47)
-        guard await SpeechTranscriber.installedLocales.contains(where: { $0.identifier(.bcp47) == target }) else {
+        guard await isModelInstalled() else {
             throw SpeechCoreError.modelNotInstalled(localeIdentifier: locale.identifier)
         }
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
@@ -67,6 +65,13 @@ public struct LiveTranscriber: Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// このロケールの認識モデルが端末に入っているか。
+    /// AssetInventory.status は導入済みで認識できる状態でも .supported を返すので使わない。
+    public func isModelInstalled() async -> Bool {
+        let target = locale.identifier(.bcp47)
+        return await SpeechTranscriber.installedLocales.contains { $0.identifier(.bcp47) == target }
     }
 
     private static func event(from result: SpeechTranscriber.Result) -> TranscriptEvent {

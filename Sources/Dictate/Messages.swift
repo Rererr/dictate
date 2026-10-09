@@ -14,6 +14,13 @@ enum Messages {
     static let secureInput = "セキュア入力中のため、録音しません。パスワード欄にカーソルがあるか、他のアプリがセキュア入力を有効にしています。"
     static let microphoneDenied = "マイクの許可がありません。システム設定を開くので、プライバシーとセキュリティ > マイクで、Dictate を許可してください。"
 
+    // 許可の付け直し
+    static let accessibilityReset = "アクセシビリティの許可の記録を消しました。システム設定を開くので、一覧で Dictate をオンにしてください。"
+    static func accessibilityResetFailed(_ detail: String) -> String { "許可の記録を消せませんでした（\(detail)）。ターミナルで tccutil reset Accessibility com.rererr.dictate を実行してください。" }
+
+    // 起動時の点検
+    static let modelNotInstalled = "日本語の音声認識モデルが導入されていません。システム設定 > キーボード > 音声入力で、日本語を追加してください。メニューの「音声入力の設定を開く」からも開けます。"
+
     // 認識
     static let noResult = "音声を認識できませんでした。キーを押している間に話してください。"
 

@@ -7,6 +7,12 @@ A push-to-talk dictation app for macOS (Japanese). Hold a hotkey, speak, and the
 
 設計と判断理由は `docs/design.md` にある。
 
+## 例
+
+チャットの入力欄にカーソルを置き、⌃⌥⌘D を押しながら「了解です、午後に対応します、送信して」と話して、離す。
+入力欄に「了解です、午後に対応します」が入り、続けて Return が送られる。
+話している間は画面の下に字幕が出て、入力欄には確定した文だけが入る。
+
 ## 状態
 
 作者が自分で使うために作った試作で、次の前提で動く。
@@ -19,7 +25,7 @@ A push-to-talk dictation app for macOS (Japanese). Hold a hotkey, speak, and the
 
 ## インストール
 
-配布用のバイナリは無いので、手元で組む。English: [Installation](#installation-english).
+配布用のバイナリは無いので、手元で組む。入れ方は三つあり、どれも結果は同じ `Dictate.app` になる。English: [Installation](#installation-english).
 
 ### 必要なもの
 
@@ -27,7 +33,34 @@ A push-to-talk dictation app for macOS (Japanese). Hold a hotkey, speak, and the
 - Swift 6.2 以降（Xcode は不要。Command Line Tools で足りる。`xcode-select --install`）
 - 日本語の音声認識モデル（システム設定 > キーボード > 音声入力で日本語を追加）
 
-### 手動で入れる
+### Homebrew で入れる
+
+Homebrew を使っていれば、Command Line Tools は入っている。このリポジトリ自体が tap になる（formula は `Formula/dictate.rb`）。
+
+```sh
+brew tap rererr/dictate https://github.com/Rererr/dictate
+brew install --HEAD rererr/dictate/dictate
+dictate                    # 起動（open /opt/homebrew/opt/dictate/Dictate.app と同じ）
+```
+
+Spotlight や Launchpad から起動したいときは、`ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app` で写す。
+更新は `brew upgrade --fetch-HEAD dictate`（`--fetch-HEAD` が無いと、HEAD の formula は更新されない）。
+署名はアドホックなので、更新のたびにアクセシビリティの許可を付け直す（下の「署名と許可」）。
+やめるときは `brew uninstall dictate` と `brew untap rererr/dictate`。
+
+### スクリプトで入れる
+
+前提の確認、ビルド、`~/Applications/Dictate.app` への配置、起動までを一つのスクリプトが行う。
+
+```sh
+git clone https://github.com/Rererr/dictate.git
+cd dictate
+scripts/install.sh
+```
+
+やめるときは `scripts/install.sh --uninstall`（設定と履歴は残す）。
+
+### 手で入れる
 
 ```sh
 git clone https://github.com/Rererr/dictate.git
@@ -36,12 +69,16 @@ scripts/bundle.sh          # build/Dictate.app を組んで署名する
 open build/Dictate.app
 ```
 
-1. 起動すると、メニューバーにマイクのアイコンが出る。
-2. 初回の起動で、マイクとアクセシビリティの許可を求められる。マイクは許可し、アクセシビリティは、システム設定 > プライバシーとセキュリティ > アクセシビリティで Dictate をオンにする（挿入に使う）。
-3. 入力欄にカーソルを置き、⌃⌥⌘D を押している間に話して、離す。
-
-組み直すたびに許可が外れるのを避けたいときは、下の「署名と許可」のとおり証明書を作る。
 やめるときは、メニューから終了し、clone したディレクトリと `~/Library/Application Support/Dictate/` を消す。
+
+### 初回にすること
+
+1. 起動すると、メニューバーにマイクのアイコンが出る（Dock には出ない）。
+2. 初回の起動で、マイクとアクセシビリティの許可を求められる。マイクは許可し、アクセシビリティは、システム設定 > プライバシーとセキュリティ > アクセシビリティで Dictate をオンにする（挿入に使う）。
+3. メニューの上部で、マイク、アクセシビリティ、日本語の認識モデルの状態を確かめる。足りないものがあると、その設定を開く項目が同じメニューに出る（認識モデルの行は、設定を変えた次にメニューを開いたときに変わる）。認識モデルが無いときは、起動時にも知らせる。
+4. 入力欄にカーソルを置き、⌃⌥⌘D を押している間に話して、離す。
+
+組み直すたびに許可が外れるのを避けたいときは、`scripts/make-cert.sh` で証明書を作る（下の「署名と許可」）。
 
 ### LLM に入れてもらう
 
@@ -52,17 +89,16 @@ https://github.com/Rererr/dictate を、この Mac に導入してください�
 
 1. 前提を確かめる: macOS 26 以降、Apple Silicon、`swift --version` が 6.2 以降。満たさなければ、足りないものを伝えて止まる。
 2. 作業用のディレクトリに clone し、README.md を読む。
-3. `scripts/bundle.sh` で build/Dictate.app を組む。失敗したら、エラーをそのまま見せる。
+3. `scripts/install.sh` で組んで ~/Applications/Dictate.app に置き、起動する。失敗したら、エラーをそのまま見せる。
 4. `scripts/test.sh` を流し、結果を伝える。
-5. `open build/Dictate.app` で起動する。
-6. あなたにはできない操作を、私に順に案内する: マイクの許可、アクセシビリティの許可、日本語の音声認識モデルの追加。
+5. あなたにはできない操作を、私に順に案内する: マイクの許可、アクセシビリティの許可、日本語の音声認識モデルの追加。メニューバーのマイクのアイコンを開くと、この三つの状態と、足りないものの設定を開く項目が出るので、三つとも揃うまで案内する。
 
 守ること:
 - sudo を使わない。
-- キーチェーンに証明書を作らない。作るかどうかは、README の「署名と許可」を示して私に尋ねる。
-- clone したディレクトリの外のファイルを変更しない。
+- キーチェーンに証明書を作らない（`scripts/make-cert.sh` を実行しない）。作るかどうかは、README の「署名と許可」を示して私に尋ねる。
+- clone したディレクトリ、~/Applications/Dictate.app、ビルドのキャッシュ以外のファイルを変更しない。
 
-最後に、既定のホットキー、設定ファイルの場所、アンインストールの方法を伝える。
+最後に、既定のホットキー、設定ファイルの場所、アンインストールの方法（`scripts/install.sh --uninstall`）を伝える。
 ```
 
 ## Installation (English)
@@ -75,6 +111,33 @@ There is no prebuilt binary. Build it locally. The app is Japanese-only (recogni
 - Swift 6.2 or later (Xcode is not required; Command Line Tools are enough: `xcode-select --install`)
 - The Japanese speech recognition model (System Settings > Keyboard > Dictation, add Japanese)
 
+### Homebrew
+
+If you use Homebrew, the Command Line Tools are already installed. This repository is its own tap (the formula is `Formula/dictate.rb`).
+
+```sh
+brew tap rererr/dictate https://github.com/Rererr/dictate
+brew install --HEAD rererr/dictate/dictate
+dictate                    # launches the app (same as open /opt/homebrew/opt/dictate/Dictate.app)
+```
+
+To launch from Spotlight or Launchpad, copy it with `ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app`.
+Update with `brew upgrade --fetch-HEAD dictate` (without `--fetch-HEAD`, a HEAD-only formula is never updated).
+The build is ad-hoc signed, so after every update you have to grant the Accessibility permission again (see below).
+Uninstall with `brew uninstall dictate` and `brew untap rererr/dictate`.
+
+### Install script
+
+One script checks the requirements, builds, copies the app to `~/Applications/Dictate.app`, and launches it.
+
+```sh
+git clone https://github.com/Rererr/dictate.git
+cd dictate
+scripts/install.sh
+```
+
+Uninstall with `scripts/install.sh --uninstall` (keeps your settings and history).
+
 ### Manual install
 
 ```sh
@@ -84,13 +147,16 @@ scripts/bundle.sh          # builds and signs build/Dictate.app
 open build/Dictate.app
 ```
 
-1. A microphone icon appears in the menu bar.
-2. On first launch, the app asks for microphone and Accessibility permissions. Allow the microphone, and turn Dictate on in System Settings > Privacy & Security > Accessibility (used to insert text).
-3. Put the cursor in a text field, hold ⌃⌥⌘D while speaking, then release.
-
-With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Reset it with `tccutil reset Accessibility com.rererr.dictate` and grant it again, or create a self-signed certificate named "Dictate Dev" as shown in the Japanese section "署名と許可" (the commands are language-independent).
-
 To uninstall, quit from the menu and delete the cloned directory and `~/Library/Application Support/Dictate/`.
+
+### First launch
+
+1. A microphone icon appears in the menu bar (not in the Dock).
+2. On first launch, the app asks for microphone and Accessibility permissions. Allow the microphone, and turn Dictate on in System Settings > Privacy & Security > Accessibility (used to insert text).
+3. The top of the menu shows the status of the microphone, Accessibility, and the Japanese recognition model. When something is missing, the menu also offers an item that opens the relevant setting (the model row updates the next time you open the menu after changing the setting). A missing model is also announced at launch.
+4. Put the cursor in a text field, hold ⌃⌥⌘D while speaking, then release.
+
+With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Choose "アクセシビリティの許可を付け直す" in the menu (it runs `tccutil reset Accessibility com.rererr.dictate` and opens the setting), or create a self-signed certificate once with `scripts/make-cert.sh` so that rebuilds keep the permission.
 
 ### Install with an LLM
 
@@ -101,44 +167,55 @@ Install https://github.com/Rererr/dictate on this Mac.
 
 1. Check the requirements: macOS 26 or later, Apple Silicon, and `swift --version` 6.2 or later. If any is missing, tell me what is missing and stop.
 2. Clone the repository into a working directory and read README.md.
-3. Build build/Dictate.app with `scripts/bundle.sh`. If it fails, show me the error as is.
+3. Run `scripts/install.sh`, which builds the app, copies it to ~/Applications/Dictate.app, and launches it. If it fails, show me the error as is.
 4. Run `scripts/test.sh` and report the result.
-5. Launch it with `open build/Dictate.app`.
-6. Walk me through the steps you cannot do yourself: microphone permission, Accessibility permission, and adding the Japanese speech recognition model.
+5. Walk me through the steps you cannot do yourself: microphone permission, Accessibility permission, and adding the Japanese speech recognition model. The menu under the microphone icon in the menu bar shows the status of all three and offers items that open the missing settings; guide me until all three are satisfied.
 
 Rules:
 - Do not use sudo.
-- Do not create a certificate in my keychain. Point me to the "署名と許可" section of the README and ask me first.
-- Do not modify files outside the cloned directory.
+- Do not create a certificate in my keychain (do not run `scripts/make-cert.sh`). Point me to the "署名と許可" section of the README and ask me first.
+- Do not modify files outside the cloned directory, ~/Applications/Dictate.app, and the build caches.
 
-Finally, tell me the default hotkey, where the settings files live, and how to uninstall.
+Finally, tell me the default hotkey, where the settings files live, and how to uninstall (`scripts/install.sh --uninstall`).
 ```
 
 ## 署名と許可
 
 署名は、キーチェーンに自己署名の証明書「Dictate Dev」があればそれを使い、無ければアドホック署名になる。
 アドホック署名では、組み直すたびに OS が別のアプリとして扱うので、許可を付け直す必要がある。
-その場合、一覧の Dictate はオンに見えても効かない。次で消してから付け直す。
-
-```sh
-tccutil reset Accessibility com.rererr.dictate
-```
+その場合、一覧の Dictate はオンに見えても効かない。
+メニューの「アクセシビリティの許可を付け直す」を選ぶと、記録を消してから設定を開く（ターミナルなら `tccutil reset Accessibility com.rererr.dictate`）。
 
 証明書を作っておくと、組み直しても許可が保たれる。
+この Mac の中だけで有効な、コード署名用の自己署名証明書で、次の 1 行で作れる。
 
 ```sh
-# 作る（この Mac の中だけで有効な、コード署名用の自己署名証明書）
-openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 3650 \
-  -subj "/CN=Dictate Dev" -addext "keyUsage=critical,digitalSignature" -addext "extendedKeyUsage=critical,codeSigning"
-openssl pkcs12 -export -inkey key.pem -in cert.pem -name "Dictate Dev" -out id.p12 -passout pass:一時的なパスワード
-security import id.p12 -k ~/Library/Keychains/login.keychain-db -P 一時的なパスワード -T /usr/bin/codesign
-rm key.pem cert.pem id.p12
-
-# 消す
-security delete-identity -c "Dictate Dev"
+scripts/make-cert.sh           # 作る。次の scripts/bundle.sh からこれで署名する
+scripts/make-cert.sh --delete  # 消す
 ```
 
-メニューバーのマイクのアイコンから、現在の設定、ホットキーの登録、設定と辞書の再読み込み、直前の発話のコピー、終了を選べる。
+作った直後の一度だけ、アドホック署名で付けた許可は引き継がれないので、上の手順で付け直す。
+Homebrew で入れた場合は、ビルドが Homebrew のサンドボックスの中で走り、キーチェーンを使えないので、証明書を作ってもアドホック署名のままになる。
+
+証明書には引き換えがある。
+鍵は codesign が確認なしに使える設定で入るので、同じユーザー権限で動く他のプログラムも、この証明書と Dictate のバンドル ID で署名したものを作れる。
+そうして作られたものは、Dictate に付けたアクセシビリティの許可を受け継ぐ。
+アドホック署名にはこの経路が無い（許可がビルドごとの実行ファイルに結び付く）。
+自分の Mac で動くものを信頼できる範囲で使う前提の仕組みで、気になるなら証明書を作らず、組み直すたびに付け直す。
+
+メニューバーのマイクのアイコンから、現在の設定と許可の状態、ホットキーの登録、設定と辞書の再読み込み、直前の発話のコピー、終了を選べる。
+
+## つまずいたら
+
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| ホットキーを押しても字幕が出ない | 押してすぐ離した（0.3 秒未満は誤操作として捨てる） | 話し終わるまで押し続ける |
+| 同上 | 他のアプリが同じキーを先に取っている | メニューの「ホットキーを登録…」で別の組み合わせにする |
+| 同上。「セキュア入力中」のトーストが出る | パスワード欄にカーソルがあるか、他のアプリがセキュア入力を有効にしたまま | そのアプリ（多くはターミナルかパスワード管理ツール）を切り替えるか終了する |
+| 字幕は出るが、入力欄に文が入らない | アクセシビリティの許可が無い。組み直した後なら、アドホック署名で別のアプリ扱いになり、許可が外れている | メニューの「アクセシビリティ」の行を見る。一覧でオンに見えて効かないときは、メニューの「アクセシビリティの許可を付け直す」を選ぶ。繰り返すなら `scripts/make-cert.sh` で証明書を作る |
+| 「音声認識モデルが導入されていません」と出る | 日本語の認識モデルが端末に無い | メニューの「音声入力の設定を開く」から、システム設定 > キーボード > 音声入力で日本語を追加する |
+| `scripts/bundle.sh` が「package requires minimum Swift tools version 6.2」で止まる | Swift が 6.2 より古い | `swift --version` で確かめ、Command Line Tools を更新する |
+| 同じ語がいつも違う表記になる | 認識器の癖。アプリは自動で補正しない | `dictionary.tsv` に `表記<TAB>読み` の行を足し、「設定と辞書を再読み込み」を選ぶ |
 
 ## 使い方
 

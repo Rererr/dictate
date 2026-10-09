@@ -1,11 +1,17 @@
 #!/bin/zsh
 # build/Dictate.app を組む。許可（マイク、アクセシビリティ）をターミナルでなくアプリに付けるため、
 # 実行ファイルを直接起動せずバンドルにする。
-# 使い方: scripts/bundle.sh [署名 ID]
-#   省略時は、キーチェーンに自己署名の証明書「Dictate Dev」があればそれで署名する。
+# 使い方: scripts/bundle.sh [--no-build] [署名 ID]
+#   署名 ID の省略時は、キーチェーンに自己署名の証明書「Dictate Dev」があればそれで署名する。
 #   無ければアドホック署名になり、組み直すたびに OS が別のアプリとして扱うので、許可の付け直しが要る。
+#   --no-build は、直前の swift build -c release の結果からバンドルだけ作る（Homebrew の formula が使う）。
 set -euo pipefail
 cd "${0:A:h}/.."
+build=1
+if [[ "${1:-}" == --no-build ]]; then
+    build=0
+    shift
+fi
 if (( $# )); then
     identity="$1"
 elif security find-identity -p codesigning | grep -q '"Dictate Dev"'; then
@@ -14,11 +20,13 @@ else
     identity="-"
 fi
 
-swift build -c release
+if (( build )); then
+    swift build -c release
+fi
 app=build/Dictate.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
-cp "$(swift build -c release --show-bin-path)/Dictate" "$app/Contents/MacOS/Dictate"
+cp .build/release/Dictate "$app/Contents/MacOS/Dictate"
 cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
