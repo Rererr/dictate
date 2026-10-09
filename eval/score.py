@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """評価シートの書き出しと履歴を突き合わせ、精度と遅延を集計する。
 
-使い方: score.py dictate-eval.json [--history PATH] [--asr-eval DIR]
-  --asr-eval は cer.py と yomi（読み正規化の実行ファイル）がある場所。CER の規則を二重に持たないために借りる。
+使い方: score.py dictate-eval.json [--history PATH]
+  読み正規化後の CER には、同じ場所の yomi（yomi.swift を組んだ実行ファイル）を使う。無ければその列だけ未計測になる。
+    swiftc -O -o eval/yomi eval/yomi.swift
 
 突き合わせは文字列で行う: 各行の欄の内容（末尾の改行を除く）と「挿入した文字列」が一致する発話のうち最新のもの。
 一致が無い行は未採点として一覧に出す。
@@ -14,8 +15,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from cer import cer, normalize
+
 DEFAULT_HISTORY = Path.home() / "Library/Application Support/Dictate/history.jsonl"
-DEFAULT_ASR_EVAL = Path.home() / "personal-dev/experiments/local-llm-guide-2026-10/asr/eval"
 STYLES = {"slack": "Slack 風", "mail": "メール風", "care": "介護記録風"}
 SEND = "送信して"
 
@@ -57,13 +59,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("export", type=Path)
     parser.add_argument("--history", type=Path, default=DEFAULT_HISTORY)
-    parser.add_argument("--asr-eval", type=Path, default=DEFAULT_ASR_EVAL)
     args = parser.parse_args()
-
-    if not (args.asr_eval / "cer.py").exists():
-        sys.exit(f"cer.py が見つかりません: {args.asr_eval}（--asr-eval で場所を指定してください）")
-    sys.path.insert(0, str(args.asr_eval))
-    from cer import cer, normalize
 
     rows = json.loads(args.export.read_text(encoding="utf-8"))["rows"]
     utterances, formats = load_history(args.history)
@@ -86,7 +82,7 @@ def main() -> None:
     print("## 認識精度（CER。誤り文字数/参照文字数）\n")
     print("| 範囲 | 表記のまま | 正規化後 | 読み正規化後 |")
     print("|---|---|---|---|")
-    yomi = args.asr_eval / "yomi"
+    yomi = Path(__file__).parent / "yomi"
     groups = [("全体", matched)] + [(name, [m for m in matched if m[0]["style"] == key]) for key, name in STYLES.items()]
     for name, group in groups:
         pairs = [(row["expected"], u["inserted"]) for row, u in group]

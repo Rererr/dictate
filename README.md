@@ -3,7 +3,19 @@
 ホットキーを押している間の発話を、前面アプリのカーソル位置に入れる macOS 常駐アプリ。
 認識は Apple SpeechTranscriber のライブ認識で、音声は端末の外に出ない。
 
+A push-to-talk dictation app for macOS (Japanese). Hold a hotkey, speak, and the text is inserted at the cursor of the frontmost app. Recognition runs on-device with Apple's SpeechTranscriber. The documentation is in Japanese.
+
 設計と判断理由は `docs/design.md` にある。
+
+## 状態
+
+作者が自分で使うために作った試作で、次の前提で動く。
+
+- 日本語専用。認識のロケール、読み辞書、末尾コマンド、フィラーの規則が日本語に固定されている。
+- 配布用のバイナリは無い。自分で組んで、自分の Mac で署名する。
+- 計測は作者 1 人の声と 1 台の Mac でのもの（肉声 20 文で CER 2.7%、キーを離してから確定まで中央値 0.10 秒）。
+- 認識誤りの自動補正はしない。読み辞書で直す（理由と、試して退けた方式は `docs/design.md` の ADR-10）。
+- 未確認の事項と既知の限界は `docs/design.md` の §9 にある。
 
 ## 必要なもの
 
@@ -135,8 +147,14 @@ scripts/test.sh
 手順と指標は `docs/design.md` の §7 にある。
 
 ```sh
+swiftc -O -o eval/yomi eval/yomi.swift   # 読み正規化後の CER に使う。無くても他の指標は出る
 python3 eval/score.py ~/Downloads/dictate-eval.json
 ```
+
+台本の組は 3 つある。`eval/stability.html` は同じ語を 5 回ずつ話す 25 文、`eval/collision.html` は同じ読みの語の衝突と言い換えを見る 40 文を開く。
+この 2 つは `score.py` の対象ではなく、履歴の生の認識結果を目で数える。
+
+音声は保存しない。採点に使うのは、評価シートの書き出しと `history.jsonl` だけである。
 
 ## 共通核 SpeechCore
 
