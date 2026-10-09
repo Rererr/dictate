@@ -22,7 +22,7 @@
   <li>各行の入力欄にカーソルを置き、ホットキーを押している間に台本を読み、離す。</li>
   <li>言い損ねたら欄を空にしてやり直す。手では直さない（挿入された文字列をそのまま採点する）。</li>
   <li>「送信して」で終わる台本は、挿入の後に改行が 1 つ入れば正しい。</li>
-  <li>20 行を終えたら「書き出し」を押し、保存された <code>dictate-eval.json</code> を <code>eval/score.py</code> に渡す。</li>
+  <li>全部の行を終えたら「書き出し」を押す。保存された JSON を採点に使う。</li>
 </ol>
 <div id="rows"></div>
 <footer>
@@ -34,7 +34,9 @@
 <script>
 // script: 読み上げる文。expected: 挿入されるべき文（末尾コマンドを除く）。
 const SEND = "送信して";
-const SENTENCES = [
+// 台本の組。URL に ?set=stability を付けると、同じ語を 5 回ずつ話す組に切り替わる
+const SETS = {
+  eval20: { title: "肉声 20 文", file: "dictate-eval.json", sentences: [
   ["S1", "slack", "さっきの件、明日の朝一でレビューお願いできますか。", true, "末尾コマンド"],
   ["S2", "slack", "PR 3113のテストが落ちているので、原因を見てからもう一度プッシュします。", false, "数値、英字"],
   ["S3", "slack", "えっと、本番デプロイは15時からでいいですか。", false, "フィラー、数値"],
@@ -55,7 +57,39 @@ const SENTENCES = [
   ["C5", "care", "えっと、入浴後に仙骨部の発赤を確認、看護師に報告。", false, "フィラー、辞書"],
   ["C6", "care", "昼食後に嚥下体操を実施、むせ込みなし。", false, "辞書"],
   ["C7", "care", "夜間は巡視3回、良眠されていた。", false, "辞書、数値"],
-].map(([id, style, expected, command, focus]) => ({ id, style, expected, command, focus, script: command ? expected + SEND : expected }));
+] },
+  // 同じ語が毎回同じ表記に認識されるかを見る。語ごとに 5 文、語の順は入れ替えてある
+  stability: { title: "誤表記の安定性（5 語 × 5 回）", file: "dictate-stability.json", sentences: [
+  ["H1", "発赤", "仙骨部に発赤あり、看護師に報告。", false, "発赤"],
+  ["R1", "良眠", "夜間は良眠されていた。", false, "良眠"],
+  ["D1", "デプロイ", "本番へのデプロイは15時からです。", false, "デプロイ"],
+  ["Q1", "キュー", "ジョブのキューが詰まっています。", false, "キュー"],
+  ["J1", "褥瘡", "褥瘡なし、皮膚の状態は良好。", false, "褥瘡"],
+  ["H2", "発赤", "右のかかとに発赤が見られる。", false, "発赤"],
+  ["R2", "良眠", "昨夜は良眠できたとのこと。", false, "良眠"],
+  ["D2", "デプロイ", "デプロイが終わったら連絡します。", false, "デプロイ"],
+  ["Q2", "キュー", "キューのワーカーを再起動します。", false, "キュー"],
+  ["J2", "褥瘡", "仙骨部に褥瘡ができている。", false, "褥瘡"],
+  ["H3", "発赤", "入浴後、背中の発赤は消えていた。", false, "発赤"],
+  ["R3", "良眠", "巡視のたびに良眠を確認。", false, "良眠"],
+  ["D3", "デプロイ", "ステージングにデプロイして確認します。", false, "デプロイ"],
+  ["Q3", "キュー", "メールの送信はキューに入れています。", false, "キュー"],
+  ["J3", "褥瘡", "褥瘡の処置を行い、ガーゼを交換した。", false, "褥瘡"],
+  ["H4", "発赤", "発赤の範囲が昨日より広がっている。", false, "発赤"],
+  ["R4", "良眠", "眠剤を使わずに良眠されている。", false, "良眠"],
+  ["D4", "デプロイ", "今日のデプロイは延期になりました。", false, "デプロイ"],
+  ["Q4", "キュー", "キューに溜まったジョブを確認します。", false, "キュー"],
+  ["J4", "褥瘡", "褥瘡予防のため、体位変換を2時間ごとに実施。", false, "褥瘡"],
+  ["H5", "発赤", "おむつ交換のときに発赤を確認した。", false, "発赤"],
+  ["R5", "良眠", "日中の活動が増えてから良眠が続いている。", false, "良眠"],
+  ["D5", "デプロイ", "デプロイの手順書を更新しました。", false, "デプロイ"],
+  ["Q5", "キュー", "失敗したジョブをキューに戻します。", false, "キュー"],
+  ["J5", "褥瘡", "褥瘡の大きさを計測して記録した。", false, "褥瘡"],
+  ] },
+};
+const SET = SETS[new URLSearchParams(location.search).get("set")] ?? SETS.eval20;
+document.querySelector("h1").textContent = `dictate 評価シート（${SET.title}）`;
+const SENTENCES = SET.sentences.map(([id, style, expected, command, focus]) => ({ id, style, expected, command, focus, script: command ? expected + SEND : expected }));
 
 const rows = document.getElementById("rows");
 for (const s of SENTENCES) {
@@ -82,7 +116,7 @@ document.getElementById("export").addEventListener("click", () => {
   document.getElementById("out").value = json;
   const link = document.createElement("a");
   link.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-  link.download = "dictate-eval.json";
+  link.download = SET.file;
   link.click();
 });
 </script>
