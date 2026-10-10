@@ -44,7 +44,7 @@ dictate                    # 起動（open /opt/homebrew/opt/dictate/Dictate.app
 ```
 
 Spotlight や Launchpad から起動したいときは、`ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app` で写す。
-更新は `brew upgrade --fetch-HEAD dictate`（`--fetch-HEAD` が無いと、HEAD の formula は更新されない）。
+更新は `brew update && brew upgrade --fetch-HEAD dictate`（`brew update` が tap の checkout を進め、`--fetch-HEAD` が無いと HEAD の formula は更新されない）。
 署名はアドホックなので、更新のたびにアクセシビリティの許可を付け直す（下の「署名と許可」）。
 やめるときは `brew uninstall dictate` と `brew untap rererr/dictate`。
 
@@ -122,7 +122,7 @@ dictate                    # launches the app (same as open /opt/homebrew/opt/di
 ```
 
 To launch from Spotlight or Launchpad, copy it with `ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app`.
-Update with `brew upgrade --fetch-HEAD dictate` (without `--fetch-HEAD`, a HEAD-only formula is never updated).
+Update with `brew update && brew upgrade --fetch-HEAD dictate` (`brew update` advances the tap checkout; without `--fetch-HEAD`, a HEAD-only formula is never updated).
 The build is ad-hoc signed, so after every update you have to grant the Accessibility permission again (see below).
 Uninstall with `brew uninstall dictate` and `brew untap rererr/dictate`.
 
@@ -260,13 +260,13 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
   "formatter": {
     "enabled": false,
     "endpoint": "http://127.0.0.1:8124/v1",
-    "model": "mlx-community/Qwen3-8B-4bit",
+    "model": "mlx-community/Qwen3-4B-4bit",
     "budgetSeconds": 1.0,
     "temperature": 0,
     "maxTokens": 512,
     "enableThinking": false,
     "systemPrompt": null,
-    "startCommand": "mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
+    "startCommand": "mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
   },
   "history": { "enabled": true },
   "alwaysPasteBundleIds": [],
@@ -293,9 +293,11 @@ LLM 整形は、規則が残した曖昧なフィラーと句読点を整える�
 `systemPrompt` を書くと組み込みのプロンプトを置き換える。ただし、挿入されるのは「フィラーの削除と句読点の変更だけ」の検証を通った出力に限られ、それ以外の書き換えは捨てて整形前の文を挿入する。
 
 ```sh
-# startCommand の既定値（手で立てるときも同じ）
-mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
+# startCommand の既定値（手で立てるときも同じ）。モデルは 4B が既定で、余裕のある Mac にはメニューで 8B への切り替えを出す
+mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
 ```
+
+GPU に使えるメモリが 10 GB 未満の Mac（メモリ 8 GB）では、4B でも遅くて実用にならないので LLM 整形をオンにできない。フィラーは規則で消える。
 
 ## よくある質問
 
@@ -303,8 +305,8 @@ mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-ar
 話した文の句読点を整え、規則では消せない曖昧なフィラーを消す任意の機能で、手元の Mac で動くサーバを使う。
 入れ方から動作確認までを [docs/local-llm.md](docs/local-llm.md) に書いた。使わなくても音声入力は動き、よくあるフィラー（えっと、えー、あのー 等）は規則で消える。
 
-**なぜモデルが Qwen3-8B なのか。もっと小さい、または大きいモデルは使えるか。**
-「キーを離して 1 秒以内」に入る中で試した最大のモデルだからである。27B は品質が良くても 3〜7 秒かかり、8B でも指示を無視することがあったので、LLM の役割をフィラーと句読点に絞った。計測の表は [docs/local-llm.md](docs/local-llm.md#モデルをどう選んだか) にある。
+**なぜ既定のモデルが Qwen3-4B で、8B は任意なのか。**
+「キーを離して 1 秒以内」に入るかで決めている。M2 の MacBook Air では 8B が中央値 1.2 秒で入らず、4B は 0.7 秒でフィラーを消せた。M4 Pro の Mac mini では 8B が 0.5 秒で、数値の扱いは 8B の方が良い。そこで 4B を既定にし、余裕のある Mac にはメニューで 8B への切り替えを出す。1.7B 以下はフィラーを消さずに返す。27B は 3〜7 秒かかる。計測の表は [docs/local-llm.md](docs/local-llm.md#モデルをどう選んだか) にある。
 
 **話した内容はどこかに送られるか。**
 送られない。認識は Apple の端末内モデル、整形は手元のサーバで、どちらも Mac の外に出ない。履歴は `~/Library/Application Support/Dictate/history.jsonl` に文字として残り、音声は保存しない。

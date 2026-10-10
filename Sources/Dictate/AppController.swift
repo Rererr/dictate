@@ -127,6 +127,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             formatterAttempted = false
             return
         }
+        // 8 GB の Mac では 4B でもスワップに入る。有効のまま設定が渡ってきても、起動せずに一度だけ知らせる
+        guard Machine.supportsFormatter else {
+            if !formatterAttempted {
+                formatterAttempted = true
+                overlay.showToast(Messages.formatterUnsupported(gpuMemoryGB: Machine.gpuMemoryGB))
+            }
+            return
+        }
         if case .starting = formatterServer.state { return }
         let client = LLMClient(config.formatter)
         Task {
@@ -212,6 +220,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         formatterSeconds = seconds
                         if seconds > config.formatter.budgetSeconds {
                             overlay.showToast(Messages.formatterSlow(seconds: seconds, budget: config.formatter.budgetSeconds))
+                        } else if canUpgradeFormatterModel {
+                            overlay.showToast(Messages.formatterCanUpgrade(seconds: seconds))
                         }
                     }
                     return
@@ -224,6 +234,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 try? await Task.sleep(for: .seconds(10))
             }
+        }
+    }
+
+    /// 4B で予算の 4 割以下なら、8B（2 倍弱の所要）も予算に入る見込み。既定の組のときだけ切り替えを出す
+    private var canUpgradeFormatterModel: Bool {
+        guard let seconds = formatterSeconds, config.formatter.usesDefaultServer, config.formatter.model == Config.Formatter.smallModel else { return false }
+        return seconds <= config.formatter.budgetSeconds * 0.4
+    }
+
+    private var canDowngradeFormatterModel: Bool {
+        guard let seconds = formatterSeconds, config.formatter.usesDefaultServer, config.formatter.model == Config.Formatter.largeModel else { return false }
+        return seconds > config.formatter.budgetSeconds
+    }
+
+    @objc private func upgradeFormatterModel() { switchFormatterModel(to: Config.Formatter.largeModel) }
+    @objc private func downgradeFormatterModel() { switchFormatterModel(to: Config.Formatter.smallModel) }
+
+    /// モデルと起動コマンドを既定の組で書き換え、サーバを立て直す。
+    private func switchFormatterModel(to model: String) {
+        formatterServer.stop()
+        formatterAttempted = false
+        updateConfig {
+            $0.formatter.model = model
+            $0.formatter.startCommand = Config.Formatter.defaultStartCommand(model: model)
         }
     }
 
@@ -282,7 +316,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case (_, .some(false), _): "接続不可。整形前の文を挿入します"
             case (_, .none, _): "接続を確認中"
             }
-            info(config.formatter.enabled ? "整形: 有効（\(reachability)）" : "整形: 無効")
+            if !Machine.supportsFormatter {
+                info("整形: この Mac では使えません（GPU に使えるメモリ \(Machine.gpuMemoryGB.map { String(format: "%.0f", $0) } ?? "不明") GB。10 GB 以上が要ります）")
+            } else {
+                info(config.formatter.enabled ? "整形: 有効（\(reachability)）" : "整形: 無効")
+            }
             info("履歴: \(config.history.enabled ? "有効" : "無効")")
             info("辞書: \(dictionary.isEmpty ? "なし" : "読み込み済み")")
         }
@@ -314,6 +352,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             action("発話の後に改行する", #selector(toggleNewlineAfterUtterance)).state = config.newlineAfterUtterance ? .on : .off
             action("フィラーを消す（えっと、あのー 等）", #selector(toggleRemoveFillers)).state = config.removeFillers ? .on : .off
             action("LLM で整える（フィラーと句読点）", #selector(toggleFormatter)).state = config.formatter.enabled ? .on : .off
+            if canUpgradeFormatterModel { _ = action("整形モデルを 8B に上げる（約 4.3 GB のダウンロード）", #selector(upgradeFormatterModel)) }
+            if canDowngradeFormatterModel { _ = action("整形モデルを 4B に替える（約 2.5 GB のダウンロード）", #selector(downgradeFormatterModel)) }
             // 接続できないときだけ、起動とログの項目を出す
             if config.formatter.enabled, formatterReachable != true {
                 switch formatterServer.state {
@@ -461,6 +501,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleFormatter() {
+        if !config.formatter.enabled, !Machine.supportsFormatter {
+            overlay.showToast(Messages.formatterUnsupported(gpuMemoryGB: Machine.gpuMemoryGB))
+            return
+        }
         updateConfig { $0.formatter.enabled.toggle() }
     }
 

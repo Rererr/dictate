@@ -265,6 +265,24 @@ import Testing
         #expect(config.formatter.startCommand == nil)
     }
 
+    @Test func 整形の既定は4Bで起動コマンドはモデルから組む() throws {
+        let config = try Config.load(from: write("{}"))
+        #expect(config.formatter.model == "mlx-community/Qwen3-4B-4bit")
+        #expect(config.formatter.startCommand == "mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'")
+        #expect(config.formatter.usesDefaultServer)
+        var custom = config
+        custom.formatter.startCommand = "my_server --port 8124"
+        #expect(!custom.formatter.usesDefaultServer)
+        #expect(Config.Formatter.defaultStartCommand(model: "x/y").contains("--model x/y "))
+    }
+
+    @Test func LLM整形はGPUに使えるメモリが10GB未満なら使えない() {
+        #expect(!Machine.supportsFormatter(gpuMemoryGB: 5.3))
+        #expect(!Machine.supportsFormatter(gpuMemoryGB: nil))
+        #expect(Machine.supportsFormatter(gpuMemoryGB: 11.0))
+        #expect(Machine.supportsFormatter(gpuMemoryGB: 37.4))
+    }
+
     @Test func 設定ファイルを開くアプリは無ければnullで書き出し書けば読み直せる() throws {
         let url = try write("{}")
         try Config.update(at: url)

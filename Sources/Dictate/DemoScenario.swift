@@ -55,6 +55,8 @@ struct DemoScenario {
         toast("デモ: 整形サーバに接続できた（モデルを読み込み中）", Messages.formatterConnected),
         toast("デモ: 整形の準備ができた", Messages.formatterReady),
         toast("デモ: この Mac では整形が予算に入らない", Messages.formatterSlow(seconds: 2.3, budget: 1.0)),
+        toast("デモ: この Mac では LLM 整形を使えない", Messages.formatterUnsupported(gpuMemoryGB: 5.3)),
+        toast("デモ: 8B に上げられる", Messages.formatterCanUpgrade(seconds: 0.3)),
         toast("デモ: 整形サーバの起動に失敗", Messages.formatterExited("サーバの起動に失敗（終了コード 127）")),
         toast("デモ: 整形サーバが動作中に止まった", Messages.formatterExited("サーバが動作中に終了（シグナル 9）")),
         toast("デモ: 整形サーバの起動コマンドを実行できない", Messages.formatterStartFailed("“/bin/zsh”を開けませんでした。")),

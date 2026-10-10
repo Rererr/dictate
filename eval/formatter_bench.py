@@ -6,6 +6,7 @@
   python3 eval/formatter_bench.py --model mlx-community/Qwen3-4B-4bit
 
 送る文はフィラーを含む 12 文（Slack 風、メール風、介護記録風）。各文を 2 回送り、2 回目（温まった状態）の所要を取る。
+初回はモデルのダウンロードが終わるまで最初の要求が待たされる（既定 600 秒まで待つ）。
 採用の判定はアプリの検証（フィラーの削除と句読点の変更だけ）の近似で、句読点と空白とフィラーを除いた文字列が入力と一致すれば採用とする。
 数値はアプリと同じく印に置き換えて送る。
 """
@@ -68,7 +69,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
     parser.add_argument("--endpoint", default="http://127.0.0.1:8124/v1")
-    parser.add_argument("--timeout", type=float, default=60)
+    # mlx_lm.server は待ち受けを開いた後もモデルのダウンロードを続ける。初回は温めの要求がその完了を待つ
+    parser.add_argument("--timeout", type=float, default=600)
     args = parser.parse_args()
     ask(args.endpoint, args.model, "えっと、準備です", args.timeout)  # 温め
     seconds, adopted, effective, with_filler, rejected, untouched = [], 0, 0, 0, [], []

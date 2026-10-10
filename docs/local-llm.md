@@ -28,8 +28,8 @@ LLM の出力は「フィラーの削除と句読点の変更だけでできて�
 
 ## 必要なもの
 
-- Apple Silicon の Mac。メモリは 16 GB 以上を勧める。既定のモデル（Qwen3-8B の 4bit 版）は動作中に約 4.6 GB を使う
-- ディスクの空き 5 GB。モデルのファイルは約 4.3 GB
+- Apple Silicon の Mac で、メモリ 16 GB 以上。8 GB の Mac では、既定のモデル（Qwen3-4B の 4bit 版、動作中に約 3.5 GB）でもスワップに入って遅くなるので、Dictate は LLM 整形をオンにできない（GPU に使えるメモリが 10 GB 未満を基準にする）。16 GB は未計測で、遅ければ温めの後に知らせる
+- ディスクの空き 3 GB（4B は約 2.5 GB。8B に上げるなら 5 GB）
 - Homebrew。無ければ https://brew.sh の手順で入れる
 - 初回だけインターネット接続。モデルのダウンロードに使う（以後は不要）
 
@@ -47,10 +47,10 @@ brew install mlx-lm
 ### 2. 一度、手で起動してモデルを取る
 
 ```sh
-mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
+mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
 ```
 
-初回はモデルのダウンロードが始まり、回線によって数分から数十分かかる。
+初回はモデルのダウンロードが始まり、回線によって数分かかる（M2 の Air で約 4 分）。
 ダウンロードは `~/.cache/huggingface/` に残り、二度目からは要らない。
 `Starting httpd at 127.0.0.1 on port 8124` のような行が出たら待ち受けに入っている。
 
@@ -80,7 +80,7 @@ Dictate は、オンにしたときに接続できなければ `formatter.startC
 ```json
 "formatter" : {
   "enabled" : true,
-  "startCommand" : "mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'",
+  "startCommand" : "mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'",
   ...
 }
 ```
@@ -116,8 +116,9 @@ mlx-lm が入っていなければ、起動せずに「mlx-lm が入っていま
 
 ## モデルをどう選んだか
 
-既定を Qwen3-8B の 4bit 版にしたのは、「キーを離してから 1 秒以内に挿入する」という予算に入る中で、試した範囲で最も大きいモデルだったからである。
-計測は作者 1 人の声と 1 台の Mac（Apple Silicon、メモリ 48 GB、macOS 27）によるもので、整形の 4 文（Slack 風、メール風、メモ風、介護記録風）に同じプロンプトを与えた。
+既定は Qwen3-4B の 4bit 版で、余裕のある Mac では 8B に上げられる。
+決め手は「キーを離してから 1 秒以内に挿入する」という予算に入るかで、Mac によって違う（下の「2 台での比較」）。
+最初の計測は作者 1 人の声と 1 台の Mac（M4 Pro、メモリ 48 GB、macOS 27）によるもので、整形の 4 文（Slack 風、メール風、メモ風、介護記録風）に同じプロンプトを与えた。
 
 | モデル | 整形の所要（4 文） | 分かったこと |
 |---|---|---|
@@ -155,7 +156,19 @@ python3 eval/formatter_bench.py --model mlx-community/Qwen3-4B-4bit
 | Qwen3-1.7B 4bit | 0.20 秒 | 0.29 秒 | 11/12 | 1/8 | 速いが、フィラーをほぼ消さずにそのまま返す。採用が高いのはそのため |
 | Qwen3-0.6B 4bit | 0.14 秒 | 0.17 秒 | 8/12 | 0/8 | フィラーを消さず、語の脱落や誤字もある |
 
-試した中では、フィラーを消せるのは 8B だけだった。4B 級は未計測で、測った結果が出れば表に足す。
+#### 2 台での比較（2026-10-10、同じ 12 文）
+
+| Mac | モデル | 所要の中央値 | 最大 | 予算 1 秒以内 | 効果 |
+|---|---|---|---|---|---|
+| Mac mini（M4 Pro、48 GB） | 8B | 0.47 秒 | 0.81 秒 | 12/12 | 7/8 |
+| MacBook Air（M2、24 GB） | 8B | 1.20 秒 | 2.15 秒 | 1/12 | （消せるが間に合わない） |
+| MacBook Air（M2、24 GB） | 4B | 0.71 秒 | 1.24 秒 | 11/12 | 12 文すべてで消した。数値の印を 5 文中 2 文で壊し、検証が捨てた |
+| MacBook Air（M2、24 GB） | 1.7B | 0.36 秒 | 0.60 秒 | 12/12 | 7 文でフィラーを消さず返す |
+
+4B は M2 の Air でも予算に入り、フィラーを消す。弱点は数値の印で、壊した出力は検証が捨てて整形前の文が入る（数値が壊れて入ることはない）。
+8B は数値の印を保つが、M2 では予算に入らない。
+そこで 4B を既定にし、温めの直後の計測で 4B が予算の 4 割以下なら、メニューに「整形モデルを 8B に上げる」を出す。
+1.7B 以下はフィラーを消さずに返すので、速くても使わない。
 
 ## 別のサーバを使う
 

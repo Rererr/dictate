@@ -32,7 +32,7 @@ class Dictate < Formula
       初回は、マイクとアクセシビリティの許可と、日本語の音声認識モデルが要る。
       メニューバーのマイクのアイコンを開くと、三つの状態と、足りないものの設定を開く項目が出る。
 
-      更新: brew upgrade --fetch-HEAD dictate（--fetch-HEAD が無いと HEAD の formula は更新されない）
+      更新: brew update && brew upgrade --fetch-HEAD dictate（brew update が tap を進め、--fetch-HEAD が無いと HEAD の formula は更新されない）
       アドホック署名のため、更新のたびにアクセシビリティの許可を付け直す必要がある。
       一覧でオンに見えるのに入らないときは、メニューの「アクセシビリティの許可を付け直す」を選ぶ。
     EOS

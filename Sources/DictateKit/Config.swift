@@ -114,7 +114,11 @@ public struct Config: Sendable, Equatable, Codable {
     public struct Formatter: Sendable, Equatable, Codable {
         public var enabled = false
         public var endpoint = URL(string: "http://127.0.0.1:8124/v1")!
-        public var model = "mlx-community/Qwen3-8B-4bit"
+        /// 既定は 4B。M2 の MacBook Air で 8B は予算 1 秒に入らず、4B はフィラーを消せた（ADR-15）。
+        /// 温めの後の計測で余裕がある Mac には、メニューで 8B への切り替えを出す。
+        public var model = Self.smallModel
+        public static let smallModel = "mlx-community/Qwen3-4B-4bit"
+        public static let largeModel = "mlx-community/Qwen3-8B-4bit"
         /// 確定からこの秒数以内に検証済みの結果が届かなければ、整形前の文を挿入する。
         public var budgetSeconds = 1.0
         public var temperature = 0.0
@@ -126,11 +130,16 @@ public struct Config: Sendable, Equatable, Codable {
         /// 整形をオンにしたときに接続できなければ、アプリがこのコマンドでサーバを起動する（ログインシェルで実行）。
         /// 既定は mlx-lm で既定のモデルを既定のポートに立てるコマンド。null は既定（systemPrompt と同じ扱い）。
         /// 空文字なら起動せず、接続できないと知らせるだけ（読み込み時に nil にする）。
-        public var startCommand: String? = Self.defaultStartCommand {
+        public var startCommand: String? = Self.defaultStartCommand(model: Self.smallModel) {
             // 空白だけは「起動しない」。読み込みと同じ正規化を、設定変更の経路にも掛ける
             didSet { if let command = startCommand, command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { startCommand = nil } }
         }
-        public static let defaultStartCommand = "mlx_lm.server --model mlx-community/Qwen3-8B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
+        public static var defaultStartCommand: String { defaultStartCommand(model: smallModel) }
+        public static func defaultStartCommand(model: String) -> String {
+            "mlx_lm.server --model \(model) --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
+        }
+        /// モデルと起動コマンドが既定の組（アプリがモデルを切り替えてよい状態）か。
+        public var usesDefaultServer: Bool { startCommand == Self.defaultStartCommand(model: model) }
 
         public init() {}
 
