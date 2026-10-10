@@ -20,9 +20,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private let demo: Bool
-    /// 画面の確認用。起動の直後に再生する場面（デモ再生のみ）と、メニューを開くまでの秒数。
+    /// 画面の確認用。起動の直後に再生する場面（デモ再生のみ）、メニューを開くまでの秒数、選ぶ項目とその秒数。
     private let autoplay: Int?
     private let openMenuAfter: Double?
+    private let select: (title: String, after: Double)?
     private let clock = ContinuousClock()
     private let overlay = Overlay()
     private let microphone = MicrophoneCapture()
@@ -53,10 +54,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var modelInstalled: Bool?
     private var lastUtterance: String?
 
-    init(demo: Bool, autoplay: Int? = nil, openMenuAfter: Double? = nil) {
+    init(demo: Bool, autoplay: Int? = nil, openMenuAfter: Double? = nil, select: (title: String, after: Double)? = nil) {
         self.demo = demo
         self.autoplay = demo ? autoplay : nil
         self.openMenuAfter = openMenuAfter
+        self.select = select
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -72,6 +74,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         reload()
         // 項目がメニューバーに載るのを待ってから開く（起動の直後では開かない）
         if let openMenuAfter { Task { try? await Task.sleep(for: .seconds(openMenuAfter)); statusItem.button?.performClick(nil) } }
+        // 開いたときと同じ内容を組み、その項目の処理をクリックと同じ経路（target と action）で呼ぶ
+        if let select {
+            Task {
+                try? await Task.sleep(for: .seconds(select.after))
+                buildMenu()
+                let index = menu.indexOfItem(withTitle: select.title)
+                guard index >= 0 else {
+                    overlay.showToast("メニューに「\(select.title)」がありません。")
+                    return
+                }
+                menu.performActionForItem(at: index)
+            }
+        }
         guard !demo else {
             if let autoplay, DemoScenario.all.indices.contains(autoplay) { play(DemoScenario.all[autoplay]) }
             return

@@ -75,4 +75,37 @@ kill -TERM "$pid"
 for _ in {1..100}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
 kill -0 "$pid" 2>/dev/null && { kill -KILL "$pid"; fail "通常モードの終了を送っても 10 秒たっても残っています（pid $pid）" }
 rm -rf "${home:h}"
+
+# 整形サーバの実機（DICTATE_LLM_E2E=1 のときだけ）: 起動コマンドが 1 回目は失敗し、メニューの「整形サーバを起動」を選ぶと
+# 本物の mlx_lm.server が別のポートで立つ。接続できることと、アプリが SIGTERM で消えたらサーバも止まることを見る
+if [[ "${DICTATE_LLM_E2E:-}" == 1 ]]; then
+    zsh -lc 'command -v mlx_lm.server' >/dev/null || fail "DICTATE_LLM_E2E=1 だが mlx_lm.server が無い"
+    port=8139
+    ! nc -z 127.0.0.1 $port 2>/dev/null || fail "ポート $port が使われています"
+    home="$(mktemp -d)/Dictate"
+    mkdir -p "$home"
+    flag="$home/second-start"
+    python3 - "$home" "$flag" "$port" <<'PY'
+import json, sys
+home, flag, port = sys.argv[1:]
+command = (f"if [[ -e {flag} ]]; then exec mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port {port} "
+           f"--chat-template-args '{{\"enable_thinking\": false}}'; else touch {flag}; exit 1; fi")
+json.dump({"formatter": {"enabled": True, "endpoint": f"http://127.0.0.1:{port}/v1", "startCommand": command}},
+          open(f"{home}/config.json", "w"), ensure_ascii=False)
+PY
+    DICTATE_HOME="$home" "$executable" --select "整形サーバを起動" 5 &
+    pid=$!
+    for _ in {1..120}; do
+        curl -s -m 1 "http://127.0.0.1:$port/v1/models" >/dev/null && break
+        sleep 1
+    done
+    curl -s -m 1 "http://127.0.0.1:$port/v1/models" >/dev/null || { kill -TERM "$pid"; fail "メニューの「整形サーバを起動」でサーバが立ちません。ログ: $home/formatter.log" }
+    [[ -e "$flag" ]] || { kill -TERM "$pid"; fail "1 回目の起動（失敗する方）が走っていません" }
+    kill -TERM "$pid"
+    for _ in {1..100}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+    for _ in {1..50}; do nc -z 127.0.0.1 $port 2>/dev/null || break; sleep 0.1; done
+    ! nc -z 127.0.0.1 $port 2>/dev/null || fail "アプリが消えてもサーバが残っています（ポート $port）"
+    rm -rf "${home:h}"
+    print "e2e.sh: 整形サーバの実機 ok（メニューの「整形サーバを起動」で立ち、アプリの終了で止まりました）"
+fi
 print "e2e.sh: ok（$app を --demo で起動し、2 秒動き続け、SIGTERM で終了。通常モードは隔離した設定で起動し、startCommand を実行して終了しました）"

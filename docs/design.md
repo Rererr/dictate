@@ -419,7 +419,7 @@ TextEdit、メモ、Slack、Chrome（textarea と Gmail の本文）、VS Code�
 マイクも認識も使わず、台本どおりの状態（部分結果が流れる、確定、整形で時間切れ、挿入の失敗、権限なし）をメニューから選んで再生する。
 組んだアプリが起動して動き続け、終了できることは `scripts/e2e.sh` が `--demo` で確かめる（2026-10-10 追加）。
 認識器に音声が通ることは、OS の `say` で作った合成音声を `LiveTranscriber` に流すテストが確かめる（音声ファイルは置かない）。
-整形サーバの起動から停止までの状態遷移は、`DICTATE_LLM_E2E=1` のときだけ本物の `mlx_lm.server` を別のポートで立てて通す（`Tests/DictateKitTests/FormatterIntegrationTests.swift`。この Mac で 2026-10-10 に通過）。メニューの実画面と、アプリ本体を通したサーバの落下と復帰は、`--demo` と本人の操作で見る。
+整形サーバの起動から停止までの状態遷移は、`DICTATE_LLM_E2E=1` のときだけ本物の `mlx_lm.server` を別のポートで立てて通す（`Tests/DictateKitTests/FormatterIntegrationTests.swift`。この Mac で 2026-10-10 に通過）。メニューからの復帰は、`scripts/e2e.sh` が同じ条件で実アプリを隔離した設定（`DICTATE_HOME`）で起動し、1 回目の起動コマンドが失敗した後に `--select "整形サーバを起動"` で項目の処理を呼んでサーバが立つことと、アプリの終了で止まることを確かめる（同日に通過。実画面はスクリーンショットで確認）。
 
 ### 7.4 肉声 20 文の結果（2026-10-09）
 

@@ -9,7 +9,13 @@ let play = arguments.firstIndex(of: "--play").flatMap { arguments.indices.contai
 let openMenuAfter: Double? = arguments.firstIndex(of: "--open-menu").map { index in
     arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) ?? 1 : 1
 }
-let controller = AppController(demo: arguments.contains("--demo"), autoplay: play, openMenuAfter: openMenuAfter)
+// --select "項目名" [秒]: 起動から（既定 1 秒）後に、メニューのその項目を選ぶ（クリックと同じ処理を呼ぶ。復帰の経路の確認用）
+let select: (title: String, after: Double)? = arguments.firstIndex(of: "--select").flatMap { index in
+    guard arguments.indices.contains(index + 1) else { return nil }
+    let after = arguments.indices.contains(index + 2) ? Double(arguments[index + 2]) ?? 1 : 1
+    return (arguments[index + 1], after)
+}
+let controller = AppController(demo: arguments.contains("--demo"), autoplay: play, openMenuAfter: openMenuAfter, select: select)
 let application = NSApplication.shared
 application.setActivationPolicy(.accessory)
 application.delegate = controller
