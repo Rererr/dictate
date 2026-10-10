@@ -24,6 +24,7 @@ enum Messages {
 
     // 認識
     static let noResult = "音声を認識できませんでした。キーを押している間に話してください。"
+    static let onlyFillers = "フィラーだけを認識したため、何も挿入しません。"
 
     // 挿入
     private static let recover = "メニューの「直前の発話をコピー」で取り出せます。"
@@ -44,8 +45,12 @@ enum Messages {
     static func formatterCanUpgrade(seconds: Double) -> String {
         "整形に \(String(format: "%.1f", seconds)) 秒で余裕があります。メニューの「整形モデルを 8B に上げる」で、数値の扱いが良い 8B に替えられます（約 4.3 GB のダウンロード）。"
     }
-    static func formatterSlow(seconds: Double, budget: Double) -> String {
-        "この Mac では整形に \(String(format: "%.1f", seconds)) 秒かかり、予算の \(budget) 秒に入りません。このままでは多くの発話が時間切れになります。config.json の formatter.budgetSeconds を延ばす（挿入がその分遅れます）か、小さいモデルに替えるか、整形をオフにしてください。"
+    /// canDowngrade は、既定の組で 8B を使っていて、メニューに「4B に替える」が出ているとき。
+    static func formatterSlow(seconds: Double, budget: Double, canDowngrade: Bool) -> String {
+        let remedy = canDowngrade
+            ? "メニューの「整形モデルを 4B に替える」を選ぶか、config.json の formatter.budgetSeconds を延ばす（挿入がその分遅れます）か、整形をオフにしてください。"
+            : "config.json の formatter.budgetSeconds を延ばす（挿入がその分遅れます）か、整形をオフにしてください。"
+        return "この Mac では整形に \(String(format: "%.1f", seconds)) 秒かかり、予算の \(budget) 秒に入りません。このままでは多くの発話が時間切れになります。\(remedy)"
     }
     /// 起動コマンドの実行ファイルが無い。既定の mlx-lm なら入れ方まで示す
     static func formatterCommandMissing(_ name: String) -> String {
@@ -73,4 +78,6 @@ enum Messages {
     static func historyFailed(_ detail: String) -> String { "履歴に書けません。\(detail)" }
     static func openFailed(_ app: String, _ detail: String) -> String { "「\(app)」で設定ファイルを開けませんでした（\(detail)）。config.json の editor を null に戻すと、次に開くときにアプリを選び直せます。" }
     static func loadFailed(_ detail: String) -> String { "\(detail)対応してから、メニューの「設定と辞書を再読み込み」を選んでください。" }
+    static func configWriteFailed(_ detail: String) -> String { "設定ファイルを書き出せませんでした（\(detail)）。今あるファイルをそのまま開きます。" }
+    static let configMissing = "設定ファイルを作れませんでした。~/Library/Application Support/Dictate/ に書けるかを確かめてください。"
 }

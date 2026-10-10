@@ -14,8 +14,8 @@ public struct Postprocessed: Sendable, Equatable {
     /// コマンドの語とフィラーを除いた本文。
     public let body: String
     public let command: VoiceCommand?
-    /// ルールで消したフィラーの数。
-    public let removedFillers: Int
+    /// 規則で消した文字数（フィラーと、それに付く読点と空白）。0 なら何も消していない。
+    public let removedFillerCharacters: Int
 }
 
 /// 辞書の置換、末尾コマンドの切り出し、ルールによるフィラーの削除の順に掛ける。
@@ -26,7 +26,7 @@ public func postprocess(_ recognized: String, dictionary: YomiDictionary, remove
     let body = removeFillers ? FillerRules.remove(from: withFillers) : withFillers
     return Postprocessed(
         afterDictionary: replaced.text, replacements: replaced.replacements, body: body, command: command,
-        removedFillers: removeFillers ? withFillers.count - body.count : 0
+        removedFillerCharacters: removeFillers ? withFillers.count - body.count : 0
     )
 }
 

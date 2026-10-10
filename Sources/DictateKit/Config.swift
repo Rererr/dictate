@@ -180,6 +180,9 @@ public struct Config: Sendable, Equatable, Codable {
         }
 
         var problem: String? {
+            if !["http", "https"].contains(endpoint.scheme?.lowercased() ?? "") || endpoint.host()?.isEmpty != false {
+                return "formatter.endpoint が URL になっていません（現在 \(endpoint.absoluteString)）。http://127.0.0.1:8124/v1 のように、http か https で書いてください。"
+            }
             if !(budgetSeconds > 0 && budgetSeconds <= 30) { return "formatter.budgetSeconds が範囲外です（現在 \(budgetSeconds)）。0 より大きく 30 以下にしてください。" }
             if !(temperature >= 0 && temperature <= 2) { return "formatter.temperature が範囲外です（現在 \(temperature)）。0 以上 2 以下にしてください。" }
             if !(1...4096).contains(maxTokens) { return "formatter.maxTokens が範囲外です（現在 \(maxTokens)）。1 以上 4096 以下にしてください。" }
@@ -288,9 +291,10 @@ public struct Config: Sendable, Equatable, Codable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        // .prettyPrinted は空の配列を "[\n\n  ]" と書く。手で直すファイルなので "[]" に潰す
+        // .prettyPrinted は空の配列を "[\n\n  ]" と書く。手で直すファイルなので "[]" に潰す。
+        // 文字列の中の改行は \n と書かれるので、生の改行を含むこの並びは配列にしか現れない
         let json = String(decoding: try encoder.encode(config), as: UTF8.self)
-            .replacing(/\[\s+\]/, with: "[]")
+            .replacing(/\[\n\s*\]/, with: "[]")
         try Data(json.utf8).write(to: url, options: .atomic)
     }
 

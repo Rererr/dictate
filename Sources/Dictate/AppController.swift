@@ -20,6 +20,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private let demo: Bool
+    /// デモ再生で、起動の直後に再生する場面と、メニューを開くか（画面の確認用）。
+    private let autoplay: Int?
+    private let openMenu: Bool
     private let clock = ContinuousClock()
     private let overlay = Overlay()
     private let microphone = MicrophoneCapture()
@@ -50,22 +53,29 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var modelInstalled: Bool?
     private var lastUtterance: String?
 
-    init(demo: Bool) {
+    init(demo: Bool, autoplay: Int? = nil, openMenu: Bool = false) {
         self.demo = demo
+        self.autoplay = demo ? autoplay : nil
+        self.openMenu = openMenu
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem.button?.image = NSImage(systemSymbolName: "mic", accessibilityDescription: "Dictate")
         formatterServer.onExit = { [weak self] state in
             guard let self, case .failed(let detail) = state else { return }
-            formatterReachable = false
+            markFormatterUnreachable()
             overlay.showToast(Messages.formatterExited(detail))
         }
         // メニューは開く直前（menuNeedsUpdate）にだけ組む。許可の状態を開いた時点の値で出せる
         menu.delegate = self
         statusItem.menu = menu
         reload()
-        guard !demo else { return }
+        // 項目がメニューバーに載るのを待ってから開く（起動の直後では開かない）
+        if openMenu { Task { try? await Task.sleep(for: .seconds(1)); statusItem.button?.performClick(nil) } }
+        guard !demo else {
+            if let autoplay, DemoScenario.all.indices.contains(autoplay) { play(DemoScenario.all[autoplay]) }
+            return
+        }
         if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
             requestMicrophone()
         }
@@ -94,15 +104,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - 設定
 
-    @objc private func reload() {
+    /// メニューの「設定と辞書を再読み込み」。整形の状態も捨てて、接続と温めをやり直す（本人が状態を戻す手段）。
+    @objc private func reloadFromMenu() {
+        reload(keepFormatterState: false)
+    }
+
+    /// keepFormatterState が真なら、整形の設定が変わらない限り、温めと計測の結果を捨てない。
+    /// メニューの他の項目の切り替えで捨てると、切り替えた直後の発話が温め直しの間は整形されず、所要の知らせも繰り返し出る
+    private func reload(keepFormatterState: Bool = false) {
         hotKey?.stop()
         hotKey = nil
+        let previousFormatter = keepFormatterState && loadError == nil ? config.formatter : nil
         loadError = nil
-        formatterReachable = nil
-        formatterWarm = false
-        formatterWarmingSince = nil
-        formatterSeconds = nil
-        formatterWarmUp?.cancel()
         do {
             config = try Config.load(from: AppPaths.config)
             dictionary = FileManager.default.fileExists(atPath: AppPaths.dictionary.path)
@@ -116,7 +129,22 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             loadError = error.localizedDescription
             overlay.showToast(Messages.loadFailed(error.localizedDescription))
         }
+        if loadError != nil || previousFormatter != config.formatter {
+            formatterReachable = nil
+            formatterWarm = false
+            formatterWarmingSince = nil
+            formatterSeconds = nil
+            formatterWarmUp?.cancel()
+        }
         ensureFormatter()
+    }
+
+    /// 届かないと分かったときの状態。メニューは「接続不可」になり、次の発話では整形を試みない
+    private func markFormatterUnreachable() {
+        formatterReachable = false
+        formatterWarm = false
+        formatterWarmingSince = nil
+        formatterWarmUp?.cancel()
     }
 
     /// 整形が有効なら接続を確かめ、できなければ起動コマンドがあるときはサーバを起動し、無いときは知らせる。
@@ -140,12 +168,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task {
             let reachable = await client.isReachable()
             guard config.formatter.enabled else { return }  // 確かめている間にオフにされた
+            if !reachable { markFormatterUnreachable() }
             formatterReachable = reachable
             if reachable {
                 // 本人が立てたサーバに届いたなら、前の失敗の表示は要らない
                 if case .failed = formatterServer.state { formatterServer.stop() }
                 formatterAttempted = false
-                warmUpFormatter(client, announce: false)
+                // 温め済みか温めの途中なら、やり直さない（設定が変わったときは reload が状態を捨てている）
+                if !formatterWarm, formatterWarmingSince == nil { warmUpFormatter(client, announce: false) }
                 return
             }
             guard !formatterAttempted else { return }
@@ -219,7 +249,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         let seconds = (ContinuousClock.now - started).seconds
                         formatterSeconds = seconds
                         if seconds > config.formatter.budgetSeconds {
-                            overlay.showToast(Messages.formatterSlow(seconds: seconds, budget: config.formatter.budgetSeconds))
+                            overlay.showToast(Messages.formatterSlow(seconds: seconds, budget: config.formatter.budgetSeconds, canDowngrade: canDowngradeFormatterModel))
                         } else if canUpgradeFormatterModel {
                             overlay.showToast(Messages.formatterCanUpgrade(seconds: seconds))
                         }
@@ -227,9 +257,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     return
                 }
                 waited = true
-                guard await client.isReachable() else {
-                    formatterReachable = false
-                    formatterWarmingSince = nil
+                let reachable = await client.isReachable()
+                guard !Task.isCancelled else { return }  // 取り消された温めが、新しい温めの状態を上書きしない
+                guard reachable else {
+                    markFormatterUnreachable()
                     return
                 }
                 try? await Task.sleep(for: .seconds(10))
@@ -252,12 +283,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func downgradeFormatterModel() { switchFormatterModel(to: Config.Formatter.smallModel) }
 
     /// モデルと起動コマンドを既定の組で書き換え、サーバを立て直す。
+    /// 旧サーバが消えるのを待ってから設定を変える。待たないと、再読み込みの接続確認が閉じかけの旧サーバに届き、新しいサーバを起動しない
     private func switchFormatterModel(to model: String) {
-        formatterServer.stop()
-        formatterAttempted = false
-        updateConfig {
-            $0.formatter.model = model
-            $0.formatter.startCommand = Config.Formatter.defaultStartCommand(model: model)
+        Task {
+            await formatterServer.stopAndWait()
+            formatterAttempted = false
+            updateConfig {
+                $0.formatter.model = model
+                $0.formatter.startCommand = Config.Formatter.defaultStartCommand(model: model)
+            }
         }
     }
 
@@ -268,6 +302,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func startFormatterServerFromMenu() {
         guard let command = config.formatter.startCommand else { return }
         startFormatterServer(command)
+    }
+
+    /// 動作中のはずのサーバに届かないとき。止めてから起動し直す
+    @objc private func restartFormatterServerFromMenu() {
+        guard let command = config.formatter.startCommand else { return }
+        Task {
+            await formatterServer.stopAndWait()
+            startFormatterServer(command)
+        }
     }
 
     @objc private func openFormatterLog() {
@@ -317,7 +360,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case (_, .none, _): "接続を確認中"
             }
             if !Machine.supportsFormatter {
-                info("整形: この Mac では使えません（GPU に使えるメモリ \(Machine.gpuMemoryGB.map { String(format: "%.0f", $0) } ?? "不明") GB。10 GB 以上が要ります）")
+                info("整形: この Mac では使えません（GPU に使えるメモリ \(Machine.gpuMemoryGB.map { String(format: "%.0f", $0) } ?? "不明") GB。\(Int(Machine.formatterMinimumGPUMemoryGB)) GB 以上が要ります）")
             } else {
                 info(config.formatter.enabled ? "整形: 有効（\(reachability)）" : "整形: 無効")
             }
@@ -359,7 +402,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 switch formatterServer.state {
                 case .stopped, .failed:
                     if config.formatter.startCommand != nil { _ = action("整形サーバを起動", #selector(startFormatterServerFromMenu)) }
-                case .starting, .running:
+                case .running:
+                    if config.formatter.startCommand != nil { _ = action("整形サーバを起動し直す（動作中だが応答がない）", #selector(restartFormatterServerFromMenu)) }
+                case .starting:
                     break
                 }
                 if FileManager.default.fileExists(atPath: AppPaths.formatterLog.path) {
@@ -370,7 +415,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         _ = action(recorder == nil ? "ホットキーを登録…" : "ホットキーの登録の窓を前に出す", #selector(registerHotkey))
         _ = action(config.editor == nil ? "設定ファイルを開く…" : "設定ファイルを開く", #selector(openConfigFile))
-        _ = action("設定と辞書を再読み込み", #selector(reload))
+        _ = action("設定と辞書を再読み込み", #selector(reloadFromMenu))
         _ = action(lastUtterance == nil ? "直前の発話をコピー（まだありません）" : "直前の発話をコピー", #selector(copyLastUtterance), enabled: lastUtterance != nil)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
@@ -486,7 +531,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.overlay.showToast(Messages.loadFailed(error.localizedDescription))
                 }
             }
-            self.reload()
+            self.reload(keepFormatterState: true)
         }
         self.recorder = recorder
         recorder.show()
@@ -514,14 +559,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             overlay.showToast(Messages.loadFailed(error.localizedDescription))
         }
-        reload()
+        reload(keepFormatterState: true)
     }
 
     /// 全項目を現在の値で書き出してから開く。壊れているときは、直せるようにそのまま開く。
     @objc private func openConfigFile() {
-        if loadError == nil { try? Config.update(at: AppPaths.config) }
+        if loadError == nil {
+            do {
+                try Config.update(at: AppPaths.config)
+            } catch {
+                // 書けなくても、あるものはそのまま開く（直せるように）。理由は出す
+                overlay.showToast(Messages.configWriteFailed(error.localizedDescription))
+            }
+        }
         guard FileManager.default.fileExists(atPath: AppPaths.config.path) else {
-            overlay.showToast(Messages.loadFailed("設定ファイルを作れませんでした。"))
+            overlay.showToast(Messages.configMissing)
             return
         }
         if let editor = config.editor {
@@ -578,7 +630,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func playDemo(_ sender: NSMenuItem) {
-        let scenario = DemoScenario.all[sender.tag]
+        play(DemoScenario.all[sender.tag])
+    }
+
+    private func play(_ scenario: DemoScenario) {
         Task {
             for step in scenario.steps {
                 try? await Task.sleep(for: step.after)
@@ -689,7 +744,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let id = UUID().uuidString
         var text = post.body
-        var formatNote: String?
+        var formatSkipped: FormatStatus?
         // 読み込み中や接続不可のときは試みない（1 秒待たせて時間切れにしない）。理由はメニューの状態表示にある
         if config.formatter.enabled, formatterWarm, !post.body.isEmpty {
             overlay.showCaption(.working, Messages.formatting)
@@ -700,7 +755,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let inBudget, inBudget.status == .adopted, let output = inBudget.output {
                 text = output
             } else {
-                formatNote = Messages.formatSkipped(inBudget?.status ?? .timedOut)
+                formatSkipped = inBudget?.status ?? .timedOut
+                // 結果を得られなかったのは、届かないときだけでなく、HTTP エラーや応答の崩れでも起きる。
+                // 本当に届かないときだけ「接続不可」にし、メニューに起動の項目を出す（挿入の後で確かめる）
+                if inBudget?.status == .unreachable {
+                    Task { if !(await client.isReachable()) { markFormatterUnreachable() } }
+                }
             }
             // 予算を超えた結果も、挿入済みの発話に後から足す
             Task {
@@ -727,12 +787,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let inserted = clock.now
         await cleanup?.value
 
-        // 本文が入らなかった、または入ったと確かめられなかったときは Return を送らない。
-        // 入っていない欄に Return だけ届くと、元からあった下書きが送信される
-        let confirmed = insertion.method == .paste || (insertion.method == .ax && insertion.reason == nil)
-        // 設定で、挿入のたびに改行する。「送信して」があればそちらを優先する
-        let command = post.command ?? (config.newlineAfterUtterance && !text.isEmpty ? .newline : nil)
-        let sends = command != nil && (text.isEmpty ? AXIsProcessTrusted() : confirmed)
+        let command = InsertionRules.command(spoken: post.command, newlineAfterUtterance: config.newlineAfterUtterance, text: text)
+        let sends = InsertionRules.sends(command: command, text: text, insertion: insertion, accessibilityTrusted: AXIsProcessTrusted())
         if sends { inserter.pressReturn(shift: command == .newline) }
 
         overlay.closeCaption()
@@ -749,14 +805,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ))
         guard recorded else { return }
 
-        // 成功は知らせない。入力欄に文が入ること自体が合図になる
-        switch (insertion.method, insertion.reason) {
-        case (.none, let reason?): overlay.showToast(reason)
-        case (.none, nil): if !sends { overlay.showToast(Messages.accessibilityDenied) }
-        case (.ax, let reason?): overlay.showToast(post.command == .send ? Messages.unverifiedNotSent : reason)
-        case (.ax, nil), (.paste, _): if let formatNote { overlay.showToast(formatNote) }
+        let outcome = InsertionRules.outcome(text: text, insertion: insertion, command: command, sends: sends, formatSkipped: formatSkipped)
+        switch outcome {
+        case .silent: break
+        case .nothingToInsert: overlay.showToast(Messages.onlyFillers)
+        case .notInserted(let reason): overlay.showToast(reason ?? Messages.accessibilityDenied)
+        case .unverified(let reason, let sendSkipped): overlay.showToast(sendSkipped ? Messages.unverifiedNotSent : reason)
+        case .formatSkipped(let status): if let note = Messages.formatSkipped(status) { overlay.showToast(note) }
         }
-        if !AXIsProcessTrusted() { openSettings(Self.accessibilityPane, afterToast: true) }
+        // 許可が無くて挿入できなかったときだけ、設定を開く（挿入するものが無かったときは開かない）
+        if case .notInserted = outcome, !AXIsProcessTrusted() { openSettings(Self.accessibilityPane, afterToast: true) }
     }
 
     private static let microphonePane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"

@@ -116,4 +116,16 @@ public final class FormatterServer {
         self.process = nil
         process.terminate()
     }
+
+    /// 終了を求め、監視シェルが消えるまで待つ（最長 5 秒）。
+    /// 止めた直後に同じポートへ接続を確かめると、閉じかけの旧サーバに届くことがある（モデルの切り替えで起きる）。
+    public func stopAndWait() async {
+        let pid = process?.processIdentifier
+        stop()
+        guard let pid else { return }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while kill(pid, 0) == 0, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
 }

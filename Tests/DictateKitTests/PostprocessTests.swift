@@ -172,7 +172,10 @@ import Testing
             try? await Task.sleep(for: .milliseconds(300))
             return 2
         }
+        let started = ContinuousClock.now
         #expect(await outcome(of: slow, within: 0.05) == nil)
+        // 予算を超えたら、処理の完了を待たずに戻る（待つと、遅いサーバのたびに挿入がその分遅れる）
+        #expect((ContinuousClock.now - started) < .milliseconds(200))
         #expect(await slow.value == 2)
     }
 
@@ -213,10 +216,10 @@ import Testing
         let on = postprocess("えっと、了解です。送信して", dictionary: dictionary)
         #expect(on.body == "了解です。")
         #expect(on.command == .send)
-        #expect(on.removedFillers == 4)
+        #expect(on.removedFillerCharacters == 4)
         let off = postprocess("えっと、了解です。送信して", dictionary: dictionary, removeFillers: false)
         #expect(off.body == "えっと、了解です。")
-        #expect(off.removedFillers == 0)
+        #expect(off.removedFillerCharacters == 0)
     }
 }
 
@@ -399,6 +402,22 @@ import Testing
         }
     }
 
+    @Test(arguments: [#"{"endpoint": "foo"}"#, #"{"endpoint": "ftp://127.0.0.1/v1"}"#, #"{"endpoint": "http:///v1"}"#, #"{"endpoint": "http://:8124/v1"}"#])
+    func 整形の接続先がhttpのURLでなければ拒否する(formatter: String) throws {
+        let url = try write(#"{"formatter": \#(formatter)}"#)
+        #expect { try Config.load(from: url) } throws: { error in
+            guard case Config.LoadError.formatter(let detail) = error else { return false }
+            return detail.contains("formatter.endpoint")
+        }
+        #expect(try Config.load(from: write(#"{"formatter": {"endpoint": "https://localhost:8080/v1"}}"#)).formatter.endpoint.host() == "localhost")
+    }
+
+    @Test func 文字列の中の角括弧は空の配列に潰さない() throws {
+        let url = try write("{}")
+        try Config.update(at: url) { $0.formatter.systemPrompt = "印は [ ] のままにする" }
+        #expect(try Config.load(from: url).formatter.systemPrompt == "印は [ ] のままにする")
+    }
+
     @Test func 設定を書き出すと全項目が並び読み直しても同じ値になる() throws {
         let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString)/config.json")
         try Config.update(at: url) {
@@ -514,6 +533,31 @@ import Testing
         #expect(kill(shell, 0) != 0)
         try? await Task.sleep(for: .milliseconds(200))
         #expect(server.state == .stopped)
+    }
+
+    /// 127.0.0.1 の port に接続できるか。
+    private func canConnect(port: Int) -> Bool {
+        let nc = Process()
+        nc.executableURL = URL(fileURLWithPath: "/usr/bin/nc")
+        nc.arguments = ["-z", "127.0.0.1", String(port)]
+        nc.standardOutput = FileHandle.nullDevice
+        nc.standardError = FileHandle.nullDevice
+        try? nc.run()
+        nc.waitUntilExit()
+        return nc.terminationStatus == 0
+    }
+
+    @MainActor @Test func 止めて待つと戻った時点で待ち受けが閉じている() async throws {
+        let port = 18_124 + Int.random(in: 0..<1000)
+        let server = FormatterServer(logURL: url("wait"))
+        // -k で、接続の確認で閉じずに待ち受け続ける
+        try server.start(command: "nc -lk 127.0.0.1 \(port)")
+        await wait { canConnect(port: port) }
+        #expect(canConnect(port: port), "nc が待ち受けに入るまで待った")
+        await server.stopAndWait()
+        #expect(server.state == .stopped)
+        #expect(server.processIdentifier == nil)
+        #expect(!canConnect(port: port), "戻った時点で、旧サーバに接続できない")
     }
 
     @MainActor @Test func 起動中はもう一度起動しても二つ目を作らない() async throws {

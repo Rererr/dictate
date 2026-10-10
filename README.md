@@ -43,7 +43,7 @@ brew install --HEAD rererr/dictate/dictate
 dictate                    # 起動（open /opt/homebrew/opt/dictate/Dictate.app と同じ）
 ```
 
-Spotlight や Launchpad から起動したいときは、`ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app` で写す。
+Spotlight や Launchpad から起動したいときは、`ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app` で写す（更新のたびに写し直す。`brew upgrade` は写した方を更新しない）。
 更新は `brew update && brew upgrade --fetch-HEAD dictate`（`brew update` が tap の checkout を進め、`--fetch-HEAD` が無いと HEAD の formula は更新されない）。
 署名はアドホックなので、更新のたびにアクセシビリティの許可を付け直す（下の「署名と許可」）。
 やめるときは `brew uninstall dictate` と `brew untap rererr/dictate`。
@@ -103,7 +103,7 @@ https://github.com/Rererr/dictate を、この Mac に導入してください�
 
 ## Installation (English)
 
-There is no prebuilt binary. Build it locally. The app is Japanese-only (recognition locale, reading dictionary, and voice commands).
+There is no prebuilt binary. Build it locally. The app is Japanese-only (recognition locale, reading dictionary, voice commands, and the filler rules).
 
 ### Requirements
 
@@ -121,7 +121,7 @@ brew install --HEAD rererr/dictate/dictate
 dictate                    # launches the app (same as open /opt/homebrew/opt/dictate/Dictate.app)
 ```
 
-To launch from Spotlight or Launchpad, copy it with `ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app`.
+To launch from Spotlight or Launchpad, copy it with `ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app` (copy it again after every upgrade; `brew upgrade` does not touch the copy).
 Update with `brew update && brew upgrade --fetch-HEAD dictate` (`brew update` advances the tap checkout; without `--fetch-HEAD`, a HEAD-only formula is never updated).
 The build is ad-hoc signed, so after every update you have to grant the Accessibility permission again (see below).
 Uninstall with `brew uninstall dictate` and `brew untap rererr/dictate`.
@@ -156,7 +156,9 @@ To uninstall, quit from the menu and delete the cloned directory and `~/Library/
 3. The top of the menu shows the status of the microphone, Accessibility, and the Japanese recognition model. When something is missing, the menu also offers an item that opens the relevant setting (the model row updates the next time you open the menu after changing the setting). A missing model is also announced at launch.
 4. Put the cursor in a text field, hold ⌃⌥⌘D while speaking, then release.
 
-With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Choose "アクセシビリティの許可を付け直す" in the menu (it runs `tccutil reset Accessibility com.rererr.dictate` and relaunches the app so that it reappears in the list), or create a self-signed certificate once with `scripts/make-cert.sh` so that rebuilds keep the permission.
+With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Choose "アクセシビリティの許可を付け直す（オンに見えて効かないとき）" in the menu (it runs `tccutil reset Accessibility com.rererr.dictate` and relaunches the app so that it reappears in the list), or create a self-signed certificate once with `scripts/make-cert.sh` so that rebuilds keep the permission.
+
+The certificate has a trade-off. Its key is imported so that `codesign` can use it without confirmation, so any program running as your user can sign something with this certificate and Dictate's bundle ID, and that program inherits Dictate's Accessibility permission. Ad-hoc signing has no such path. If you installed with Homebrew, the build runs in Homebrew's sandbox, cannot reach the keychain, and stays ad-hoc signed even if the certificate exists.
 
 ### Install with an LLM
 
@@ -203,8 +205,6 @@ Homebrew で入れた場合は、ビルドが Homebrew のサンドボックス�
 アドホック署名にはこの経路が無い（許可がビルドごとの実行ファイルに結び付く）。
 自分の Mac で動くものを信頼できる範囲で使う前提の仕組みで、気になるなら証明書を作らず、組み直すたびに付け直す。
 
-メニューバーのマイクのアイコンから、現在の設定と許可の状態、ホットキーの登録、設定と辞書の再読み込み、直前の発話のコピー、終了を選べる。
-
 ## つまずいたら
 
 | 症状 | 原因 | 対処 |
@@ -212,6 +212,7 @@ Homebrew で入れた場合は、ビルドが Homebrew のサンドボックス�
 | ホットキーを押しても字幕が出ない | 押してすぐ離した（0.3 秒未満は誤操作として捨てる） | 話し終わるまで押し続ける |
 | 同上 | 他のアプリが同じキーを先に取っている | メニューの「ホットキーを登録…」で別の組み合わせにする |
 | 同上。「セキュア入力中」のトーストが出る | パスワード欄にカーソルがあるか、他のアプリがセキュア入力を有効にしたまま | そのアプリ（多くはターミナルかパスワード管理ツール）を切り替えるか終了する |
+| 「フィラーだけを認識したため、何も挿入しません」と出る | 発話が「えっと」「あのー」だけだった | 本文を話す。フィラーを本文として入れたいなら、メニューの「フィラーを消す（えっと、あのー 等）」を切る |
 | 字幕は出るが、入力欄に文が入らない | アクセシビリティの許可が無い。組み直した後なら、アドホック署名で別のアプリ扱いになり、許可が外れている | メニューの「アクセシビリティ」の行を見る。一覧でオンに見えて効かないときは、メニューの「アクセシビリティの許可を付け直す」を選ぶ。繰り返すなら `scripts/make-cert.sh` で証明書を作る |
 | 「音声認識モデルが導入されていません」と出る | 日本語の認識モデルが端末に無い | メニューの「音声入力の設定を開く」から、システム設定 > キーボード > 音声入力で日本語を追加する |
 | `scripts/bundle.sh` が「package requires minimum Swift tools version 6.2」で止まる | Swift が 6.2 より古い | `swift --version` で確かめ、Command Line Tools を更新する |
@@ -242,17 +243,27 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
 メニューの「発話の後に改行する」をオンにすると、コマンドを言わなくても、挿入のたびに Shift+Return を送る。
 押して離すまでの 1 回の発話が 1 行になる。
 
+### メニュー
+
+メニューバーのマイクのアイコンを開くと、上から順に次が出る。
+
+- 状態: ホットキー、マイク、アクセシビリティ、日本語の認識モデル、整形（有効なら接続の状態と所要）、履歴、辞書
+- 足りないものがあるときだけ: 「マイクの許可を求める」または「マイクの設定を開く」、「アクセシビリティの設定を開く」と「アクセシビリティの許可を付け直す（オンに見えて効かないとき）」、「音声入力の設定を開く（日本語を追加）」
+- 切り替え: 「発話の後に改行する」「フィラーを消す（えっと、あのー 等）」「LLM で整える（フィラーと句読点）」。整形の計測で余裕があれば「整形モデルを 8B に上げる」、8B が予算に入らなければ「整形モデルを 4B に替える」
+- 整形サーバに接続できないときだけ: 「整形サーバを起動」（動作中のはずなら「整形サーバを起動し直す」）「整形サーバのログを開く」「ローカル LLM の手引きを開く」
+- 「ホットキーを登録…」「設定ファイルを開く」「設定と辞書を再読み込み」「直前の発話をコピー」「終了」
+
 ## 設定
 
 `~/Library/Application Support/Dictate/` に置く。どれも無ければ既定値で動く。
 
 | ファイル | 内容 |
 |---|---|
-| `config.json` | ホットキー、LLM 整形、履歴、常に貼り付けで挿入するアプリ |
+| `config.json` | ホットキー、LLM 整形、履歴、常に貼り付けで挿入するアプリ、発話の後の改行、フィラーの削除、設定ファイルを開くアプリ |
 | `dictionary.tsv` | 読み辞書。`表記<TAB>読み`（読みは省略可）。例は `eval/dictionary.tsv` |
-| `history.jsonl` | 履歴（追記専用）。生テキスト、挿入した文、経路、所要時間 |
+| `history.jsonl` | 履歴（追記専用で、上限は無い）。生テキスト、挿入した文、経路、所要時間。残したくなければ `history.enabled` を `false` にする |
 
-`config.json` の全項目と既定値:
+`config.json` の全項目と既定値（アプリが書き出すときは、項目名のアルファベット順に並ぶ）:
 
 ```json
 {
@@ -321,6 +332,7 @@ open build/Dictate.app --args --demo
 ```
 
 マイクも認識も使わず、メニューから選んだ場面（成功、整形の時間切れ、許可なし等）の表示を再生する。許可は要らない。
+`--demo --play N` で N 番目（0 始まり。メニューの並び順）の場面を起動の直後に再生し、`--open-menu` で起動の直後にメニューを開く（通常の起動でも効く）。スクリーンショットで確かめるためのもので、手で見るなら要らない。
 
 ## テスト
 
@@ -330,6 +342,18 @@ scripts/test.sh
 
 素の `swift test` は、Command Line Tools だけの環境でテスト用マクロのプラグインを見つけられずに失敗することがある。
 `scripts/test.sh` はプラグインの場所を明示する。
+
+テストは三つの層でできている。
+
+- 単体: 後処理（辞書、コマンド、フィラーの規則、数値マスク、整形の検証）、設定の読み書き、履歴、整形サーバの子プロセス
+- 一連: 認識結果の文字列から挿入する文とコマンドが決まるまで（辞書 → コマンド → フィラーの規則 → 整形 → 予算）を、アプリ本体と同じ判断の順で、LLM を固定の応答に置き換えて通す。合成音声（OS の `say` の Kyoko）を認識器に流し、確定まで通ることも確かめる（日本語の認識モデルと Kyoko の声がある Mac でだけ走る）
+- 起動: `scripts/e2e.sh` が `build/Dictate.app` を組み、署名と Info.plist を確かめ、`--demo` で起動して動き続けることと SIGTERM で終了できることを見る。動作中の Dictate には触らない
+- 整形サーバの実機: `DICTATE_LLM_E2E=1` を付けたときだけ、本物の `mlx_lm.server` を別のポート（8130）で起動し、接続、温め、整形、停止、接続不可までをアプリと同じ経路で通す（mlx-lm とモデルのキャッシュが要る。動作中の Dictate のサーバには触らない）
+
+```sh
+scripts/e2e.sh
+DICTATE_LLM_E2E=1 scripts/test.sh
+```
 
 ## 評価
 

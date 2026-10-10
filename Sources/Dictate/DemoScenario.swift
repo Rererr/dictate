@@ -54,7 +54,8 @@ struct DemoScenario {
         toast("デモ: 起動コマンドが見つからない", Messages.formatterCommandMissing("my_server")),
         toast("デモ: 整形サーバに接続できた（モデルを読み込み中）", Messages.formatterConnected),
         toast("デモ: 整形の準備ができた", Messages.formatterReady),
-        toast("デモ: この Mac では整形が予算に入らない", Messages.formatterSlow(seconds: 2.3, budget: 1.0)),
+        toast("デモ: この Mac では整形が予算に入らない（4B）", Messages.formatterSlow(seconds: 2.3, budget: 1.0, canDowngrade: false)),
+        toast("デモ: この Mac では整形が予算に入らない（8B。4B に替えられる）", Messages.formatterSlow(seconds: 1.2, budget: 1.0, canDowngrade: true)),
         toast("デモ: この Mac では LLM 整形を使えない", Messages.formatterUnsupported(gpuMemoryGB: 5.3)),
         toast("デモ: 8B に上げられる", Messages.formatterCanUpgrade(seconds: 0.3)),
         toast("デモ: 整形サーバの起動に失敗", Messages.formatterExited("サーバの起動に失敗（終了コード 127）")),
@@ -71,6 +72,8 @@ struct DemoScenario {
             + speaking.dropFirst() + ending()),
         .init(title: "デモ: 認識結果なし", steps: [Step(after: .zero, action: .caption(.recording, Messages.listening)), Step(after: .seconds(1), action: .caption(.working, Messages.finalizing))]
             + ending(Messages.noResult)),
+        .init(title: "デモ: フィラーだけの発話", steps: [Step(after: .zero, action: .caption(.recording, "えっと、")), Step(after: .seconds(1), action: .caption(.working, Messages.finalizing))]
+            + ending(Messages.onlyFillers)),
         .init(title: "デモ: 認識の失敗（話している最中）", steps: [Step(after: .zero, action: .caption(.recording, Messages.listening))]
             + ending(Messages.recognitionFailed(SpeechCoreError.modelNotInstalled(localeIdentifier: "ja-JP").localizedDescription), after: .milliseconds(300))),
         toast("デモ: マイクを開けない", Messages.microphoneFailed(SpeechCoreError.microphoneUnavailable.localizedDescription)),

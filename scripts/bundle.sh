@@ -7,6 +7,7 @@
 #   --no-build は、直前の swift build -c release の結果からバンドルだけ作る（Homebrew の formula が使う）。
 set -euo pipefail
 cd "${0:A:h}/.."
+version=0.1.0
 build=1
 if [[ "${1:-}" == --no-build ]]; then
     build=0
@@ -29,7 +30,7 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp .build/release/Dictate "$app/Contents/MacOS/Dictate"
 cp build/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
-cat > "$app/Contents/Info.plist" <<'PLIST'
+cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -39,10 +40,13 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
     <key>CFBundleExecutable</key><string>Dictate</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>$version</string>
+    <key>CFBundleVersion</key><string>$version</string>
     <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>LSUIElement</key><true/>
+    <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Rererr. MIT License.</string>
     <key>NSMicrophoneUsageDescription</key><string>ホットキーを押している間の発話を文字にするために、マイクを使います。</string>
     <key>NSSpeechRecognitionUsageDescription</key><string>発話を端末内で文字にするために、音声認識を使います。</string>
 </dict>

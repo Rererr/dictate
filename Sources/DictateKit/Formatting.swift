@@ -152,17 +152,23 @@ public func formatVerified(_ text: String, using llm: @Sendable (String) async t
     return FormatResult(status: .adopted, output: restored, detail: nil, seconds: elapsed())
 }
 
-/// 予算内に終われば結果を返す。超えても task は止めない（遅れた結果を履歴に残すため）。
+/// 予算内に終われば結果を返し、超えれば nil を返す。超えても task は止めない（遅れた結果を履歴に残すため）。
+/// TaskGroup で競わせると、`task.value` の待ちは取り消しに応じないので、グループが task の完了まで抜けない。
+/// 先に届いた方だけを読んで戻る形にする（実測: 2 秒かかる task に予算 0.1 秒で、0.10 秒で nil が返る）。
 public func outcome<T: Sendable>(of task: Task<T, Never>, within seconds: Double) async -> T? {
-    await withTaskGroup(of: T?.self) { group in
-        group.addTask { await task.value }
-        group.addTask {
+    let race = AsyncStream<T?> { continuation in
+        let value = Task { continuation.yield(await task.value) }
+        let timer = Task {
             try? await Task.sleep(for: .seconds(seconds))
-            return nil
+            continuation.yield(nil)
         }
-        defer { group.cancelAll() }
-        return await group.next() ?? nil
+        continuation.onTermination = { _ in
+            value.cancel()
+            timer.cancel()
+        }
     }
+    for await first in race { return first }
+    return nil
 }
 
 extension Duration {
