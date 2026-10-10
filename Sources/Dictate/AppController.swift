@@ -20,9 +20,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private let demo: Bool
-    /// デモ再生で、起動の直後に再生する場面と、メニューを開くか（画面の確認用）。
+    /// 画面の確認用。起動の直後に再生する場面（デモ再生のみ）と、メニューを開くまでの秒数。
     private let autoplay: Int?
-    private let openMenu: Bool
+    private let openMenuAfter: Double?
     private let clock = ContinuousClock()
     private let overlay = Overlay()
     private let microphone = MicrophoneCapture()
@@ -53,10 +53,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var modelInstalled: Bool?
     private var lastUtterance: String?
 
-    init(demo: Bool, autoplay: Int? = nil, openMenu: Bool = false) {
+    init(demo: Bool, autoplay: Int? = nil, openMenuAfter: Double? = nil) {
         self.demo = demo
         self.autoplay = demo ? autoplay : nil
-        self.openMenu = openMenu
+        self.openMenuAfter = openMenuAfter
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -71,7 +71,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
         reload()
         // 項目がメニューバーに載るのを待ってから開く（起動の直後では開かない）
-        if openMenu { Task { try? await Task.sleep(for: .seconds(1)); statusItem.button?.performClick(nil) } }
+        if let openMenuAfter { Task { try? await Task.sleep(for: .seconds(openMenuAfter)); statusItem.button?.performClick(nil) } }
         guard !demo else {
             if let autoplay, DemoScenario.all.indices.contains(autoplay) { play(DemoScenario.all[autoplay]) }
             return
@@ -250,7 +250,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         formatterSeconds = seconds
                         if seconds > config.formatter.budgetSeconds {
                             overlay.showToast(Messages.formatterSlow(seconds: seconds, budget: config.formatter.budgetSeconds, canDowngrade: canDowngradeFormatterModel))
-                        } else if canUpgradeFormatterModel {
+                        } else if canUpgradeFormatterModel, !UserDefaults.standard.bool(forKey: Self.upgradeSuggestedKey) {
+                            // 4B を選んで使う人に起動のたびに勧めない。メニューの項目は残る
+                            UserDefaults.standard.set(true, forKey: Self.upgradeSuggestedKey)
                             overlay.showToast(Messages.formatterCanUpgrade(seconds: seconds))
                         }
                     }
@@ -267,6 +269,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
     }
+
+    /// 「8B に上げられる」を一度知らせたか。設定ではなくアプリの状態なので config.json には書かない
+    private static let upgradeSuggestedKey = "formatterUpgradeSuggested"
 
     /// 4B で予算の 4 割以下なら、8B（2 倍弱の所要）も予算に入る見込み。既定の組のときだけ切り替えを出す
     private var canUpgradeFormatterModel: Bool {
@@ -845,7 +850,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func record(_ entry: some Encodable) -> Bool {
         guard config.history.enabled else { return true }
         do {
-            try HistoryWriter(url: AppPaths.history).append(entry)
+            try HistoryWriter(url: AppPaths.history, rotateAtBytes: config.history.rotateAtBytes).append(entry)
             return true
         } catch {
             overlay.showToast(Messages.historyFailed(error.localizedDescription))

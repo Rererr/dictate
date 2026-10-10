@@ -98,13 +98,20 @@ public struct FormatRecord: Sendable, Codable, Equatable {
     }
 }
 
-/// 1 行 1 イベントの追記専用。書き換えと削除はしない。
+/// 1 行 1 イベントの追記専用。行の書き換えと削除はしない。
+/// 上限を超えたらファイルごと `.1` に繰り越す（話した全文が無期限に溜まらないように）。
 public struct HistoryWriter: Sendable {
     public let url: URL
+    /// この大きさ（バイト）を超えていたら、書く前に繰り越す。nil なら上限なし。
+    public let rotateAtBytes: UInt64?
 
-    public init(url: URL) {
+    public init(url: URL, rotateAtBytes: UInt64? = nil) {
         self.url = url
+        self.rotateAtBytes = rotateAtBytes
     }
+
+    /// 繰り越し先。前の繰り越し分は上書きで消える。
+    public var rotatedURL: URL { url.appendingPathExtension("1") }
 
     public func append(_ record: some Encodable) throws {
         let encoder = JSONEncoder()
@@ -113,6 +120,11 @@ public struct HistoryWriter: Sendable {
         var line = try encoder.encode(record)
         line.append(0x0A)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let limit = rotateAtBytes,
+           let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64, size >= limit {
+            if FileManager.default.fileExists(atPath: rotatedURL.path) { try FileManager.default.removeItem(at: rotatedURL) }
+            try FileManager.default.moveItem(at: url, to: rotatedURL)
+        }
         if !FileManager.default.fileExists(atPath: url.path) {
             try line.write(to: url)
             return

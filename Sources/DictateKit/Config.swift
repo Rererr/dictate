@@ -192,6 +192,8 @@ public struct Config: Sendable, Equatable, Codable {
 
     public struct History: Sendable, Equatable, Codable {
         public var enabled = true
+        /// この大きさを超えたら history.jsonl.1 に繰り越し、新しいファイルに書く（前の繰り越し分は消える）。0 なら上限なし。
+        public var maxMegabytes = 20.0
 
         public init() {}
 
@@ -199,9 +201,17 @@ public struct Config: Sendable, Equatable, Codable {
             try rejectUnknownKeys(decoder, known: CodingKeys.self)
             let container = try decoder.container(keyedBy: CodingKeys.self)
             enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? enabled
+            maxMegabytes = try container.decodeIfPresent(Double.self, forKey: .maxMegabytes) ?? maxMegabytes
         }
 
-        private enum CodingKeys: String, CodingKey, CaseIterable { case enabled }
+        private enum CodingKeys: String, CodingKey, CaseIterable { case enabled, maxMegabytes }
+
+        var problem: String? {
+            maxMegabytes >= 0 ? nil : "history.maxMegabytes が範囲外です（現在 \(maxMegabytes)）。0 以上にしてください（0 は上限なし）。"
+        }
+
+        /// 繰り越す大きさ（バイト）。nil なら上限なし。
+        public var rotateAtBytes: UInt64? { maxMegabytes > 0 ? UInt64(maxMegabytes * 1_048_576) : nil }
     }
 
     public var hotkey = Hotkey()
@@ -279,6 +289,7 @@ public struct Config: Sendable, Equatable, Codable {
         }
         if let problem = config.hotkey.problem { throw LoadError.hotkey(problem) }
         if let problem = config.formatter.problem { throw LoadError.formatter(problem) }
+        if let problem = config.history.problem { throw LoadError.formatter(problem) }
         return config
     }
 
@@ -331,8 +342,12 @@ private func rejectUnknownKeys<Keys: CodingKey & CaseIterable>(_ decoder: Decode
 }
 
 public enum AppPaths {
+    /// 設定、辞書、履歴、ログを置く場所。環境変数 DICTATE_HOME があればそこ（テストで本人の設定に触れないため）。
     public static var directory: URL {
-        URL.applicationSupportDirectory.appending(path: "Dictate", directoryHint: .isDirectory)
+        if let home = ProcessInfo.processInfo.environment["DICTATE_HOME"], !home.isEmpty {
+            return URL(fileURLWithPath: home, isDirectory: true)
+        }
+        return URL.applicationSupportDirectory.appending(path: "Dictate", directoryHint: .isDirectory)
     }
     public static var config: URL { directory.appending(path: "config.json") }
     public static var dictionary: URL { directory.appending(path: "dictionary.tsv") }

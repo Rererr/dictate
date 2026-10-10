@@ -57,4 +57,22 @@ for _ in {1..100}; do
     sleep 0.1
 done
 kill -0 "$pid" 2>/dev/null && { kill -KILL "$pid"; fail "終了を送っても 10 秒たっても残っています（pid $pid）" }
-print "e2e.sh: ok（$app を --demo で起動し、2 秒動き続け、SIGTERM で終了しました）"
+# 通常モード: 隔離した設定ディレクトリ（DICTATE_HOME）で実行ファイルを直接起動し、設定を読んで整形サーバの起動を試みることを見る。
+# 起動コマンドは `false`（すぐ 1 で終わる）なので、サーバは立たず、ログに起動の記録と失敗が残る。本人の設定と履歴には触れない
+home="$(mktemp -d)/Dictate"
+mkdir -p "$home"
+cat > "$home/config.json" <<'JSON'
+{ "formatter": { "enabled": true, "endpoint": "http://127.0.0.1:8139/v1", "startCommand": "false" } }
+JSON
+DICTATE_HOME="$home" "$executable" &
+pid=$!
+sleep 4
+kill -0 "$pid" 2>/dev/null || fail "通常モードで起動の直後に終了しました（pid $pid）"
+[[ -f "$home/formatter.log" ]] || { kill -TERM "$pid"; fail "隔離した設定を読んでいません（$home/formatter.log が無い）" }
+grep -q '^\$ false$' "$home/formatter.log" || { kill -TERM "$pid"; fail "設定の startCommand で起動していません" }
+[[ ! -e "$home/history.jsonl" ]] || { kill -TERM "$pid"; fail "発話していないのに履歴が書かれています" }
+kill -TERM "$pid"
+for _ in {1..100}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+kill -0 "$pid" 2>/dev/null && { kill -KILL "$pid"; fail "通常モードの終了を送っても 10 秒たっても残っています（pid $pid）" }
+rm -rf "${home:h}"
+print "e2e.sh: ok（$app を --demo で起動し、2 秒動き続け、SIGTERM で終了。通常モードは隔離した設定で起動し、startCommand を実行して終了しました）"

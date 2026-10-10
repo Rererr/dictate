@@ -110,6 +110,11 @@ import Testing
         #expect(!FormatVerifier.accepts(input: input, output: output))
     }
 
+    @Test func 直前の仮名の長音になる語の削除は認めない() {
+        #expect(!FormatVerifier.accepts(input: "へえー、そうなんだ", output: "へ、そうなんだ。"))
+        #expect(FormatVerifier.accepts(input: "本番はえっと<N1>時から", output: "本番は<N1>時から。"))
+    }
+
     @Test func 読点が続かないあのとそのは削除を認めない() {
         #expect(!FormatVerifier.accepts(input: "あの件です", output: "件です"))
         #expect(FormatVerifier.accepts(input: "その、件です", output: "件です"))
@@ -209,6 +214,20 @@ import Testing
         #expect(FillerRules.remove(from: "またその、精度を高める") == "またその、精度を高める")
         #expect(FillerRules.remove(from: "まあまあの出来です") == "まあまあの出来です")
         #expect(FillerRules.remove(from: "なんか変だ") == "なんか変だ")
+    }
+
+    @Test func 直前の仮名の長音になる語は消さない() {
+        #expect(FillerRules.remove(from: "へえー、そうなんだ") == "へえー、そうなんだ")
+        #expect(FillerRules.remove(from: "ねえー、聞いて") == "ねえー、聞いて")
+        #expect(FillerRules.remove(from: "いいえー、違います") == "いいえー、違います")
+        #expect(FillerRules.remove(from: "まあのー、そうですね") == "まあのー、そうですね")
+        // 母音が重ならなければ、読点が無くても消す。2 文字の「えー」だけは直前が仮名でないときに限る
+        #expect(FillerRules.remove(from: "本番はえっと15時から") == "本番は15時から")
+        #expect(FillerRules.remove(from: "本番はえー15時から") == "本番はえー15時から")
+        #expect(FillerRules.remove(from: "本番。えー15時から") == "本番。15時から")
+        #expect(FillerRules.remove(from: "確認ですあのー、明日") == "確認です明日")
+        // 代償: 読点の無い「それでえーと」は残る（本文を削るより残す側に倒す）
+        #expect(FillerRules.remove(from: "それでえーと明日") == "それでえーと明日")
     }
 
     @Test func 後処理で既定で効き設定で切れる() {
@@ -445,6 +464,33 @@ import Testing
 }
 
 @Suite struct 履歴 {
+    @Test func 上限を超えたら繰り越して新しいファイルに書く() throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString)/history.jsonl")
+        let writer = HistoryWriter(url: url, rotateAtBytes: 100)
+        let record = FormatRecord(utteranceId: "u1", result: FormatResult(status: .adopted, output: "x", detail: nil, seconds: 0.1))
+        try writer.append(record)  // 約 90 バイト。上限未満なので残る
+        try writer.append(record)  // 180 バイト
+        #expect(!FileManager.default.fileExists(atPath: writer.rotatedURL.path))
+        try writer.append(record)  // 書く前に 180 ≥ 100 なので繰り越し、新しいファイルに 1 行
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+        #expect(lines.count == 1)
+        #expect(try String(contentsOf: writer.rotatedURL, encoding: .utf8).split(separator: "\n").count == 2)
+        // 上限なしなら繰り越さない
+        let unlimited = HistoryWriter(url: url, rotateAtBytes: nil)
+        for _ in 0..<5 { try unlimited.append(record) }
+        #expect(try String(contentsOf: url, encoding: .utf8).split(separator: "\n").count == 6)
+    }
+
+    @Test func 履歴の上限は設定から読み0なら上限なし() throws {
+        #expect(Config().history.rotateAtBytes == 20 * 1_048_576)
+        var config = Config()
+        config.history.maxMegabytes = 0
+        #expect(config.history.rotateAtBytes == nil)
+        let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString).json")
+        try Data(#"{"history": {"maxMegabytes": -1}}"#.utf8).write(to: url)
+        #expect(throws: Config.LoadError.self) { try Config.load(from: url) }
+    }
+
     @Test func 発話と整形を1行ずつ追記する() throws {
         let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString)/history.jsonl")
         let writer = HistoryWriter(url: url)

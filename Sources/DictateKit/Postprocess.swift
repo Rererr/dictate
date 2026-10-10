@@ -44,6 +44,27 @@ public enum FillerRules {
     private static let boundary: Set<Character> = ["、", "，", ",", "。", "．", ".", "！", "!", "？", "?", "\n"]
     private static let space: Set<Character> = [" ", "　"]
 
+    /// 母音が「え」の仮名。「へえー」「ねえー」「いいえー」の「えー」は感動詞の長音で、フィラーではない。
+    private static let eRow: Set<Character> = Set("えけせてねへめれげぜでべぺエケセテネヘメレゲゼデベペ")
+    /// 母音が「あ」の仮名。「まあのー」のような重なりに同じ扱いをする。
+    private static let aRow: Set<Character> = Set("あかさたなはまやらわがざだばぱゃアカサタナハマヤラワガザダバパャ")
+
+    /// 直前の文字が、語の先頭の母音を伸ばした形になるなら、そこから始まる語はフィラーとして消さない。
+    /// 2 文字の「えー」は語の末尾の「え」とも重なる（「いいえー」）ので、直前が仮名なら消さない。
+    /// 「それでえーと明日」のように読点の無い連続は残ることになるが、本文の一部を削るよりは残す側に倒す。
+    public static func canStart(_ word: String, after previous: Character?) -> Bool {
+        guard let previous, let first = word.first else { return true }
+        switch first {
+        case "え": return !eRow.contains(previous) && !(word == "えー" && isKana(previous))
+        case "あ": return !aRow.contains(previous)
+        default: return true
+        }
+    }
+
+    private static func isKana(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { (0x3041...0x309F).contains($0.value) || (0x30A0...0x30FF).contains($0.value) }
+    }
+
     public static func remove(from text: String) -> String {
         let chars = Array(text)
         var out: [Character] = []
@@ -66,7 +87,7 @@ public enum FillerRules {
         }
         while i < chars.count {
             var removed = false
-            for word in unambiguous where matches(word, at: i) {
+            for word in unambiguous where matches(word, at: i) && canStart(word, after: out.last) {
                 i = consumeComma(after: i + word.count)
                 removed = true
                 break

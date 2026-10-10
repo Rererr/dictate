@@ -80,6 +80,8 @@ public enum FormatVerifier {
                 // フィラーは生テキスト上で連続していること（句読点をまたがない）
                 if source[position] != character || position != kept[i] + offset { return nil }
             }
+            // 直前の仮名の長音（「へえー」）は規則と同じく消させない
+            if !FillerRules.canStart(filler, after: kept[i] > 0 ? source[kept[i] - 1] : nil) { return nil }
             if requiresComma {
                 let next = kept[i] + characters.count
                 guard next < source.count, source[next] == "、" || source[next] == "，" else { return nil }
