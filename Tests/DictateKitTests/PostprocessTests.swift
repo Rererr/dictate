@@ -184,6 +184,42 @@ import Testing
     }
 }
 
+@Suite struct フィラーの規則 {
+    @Test func 曖昧でない語はどこにあっても直後の読点ごと消す() {
+        #expect(FillerRules.remove(from: "えっと、本番デプロイは15時からでいいですか") == "本番デプロイは15時からでいいですか")
+        #expect(FillerRules.remove(from: "えっと本番でプロイは 15時から") == "本番でプロイは 15時から")
+        #expect(FillerRules.remove(from: "えー、見積書を添付いたしました") == "見積書を添付いたしました")
+        #expect(FillerRules.remove(from: "あのー、来週の水曜日") == "来週の水曜日")
+        #expect(FillerRules.remove(from: "えーっと、朝食は、えーと、全量") == "朝食は、全量")
+        #expect(FillerRules.remove(from: "ええと、確認します") == "確認します")
+    }
+
+    @Test func 曖昧な語は文頭か句読点の直後で読点が続くときだけ消す() {
+        #expect(FillerRules.remove(from: "あの、Laravel のキューが詰まっている") == "Laravel のキューが詰まっている")
+        #expect(FillerRules.remove(from: "なんか、PR のテストが落ちている") == "PR のテストが落ちている")
+        #expect(FillerRules.remove(from: "まあ、ステージングで再現できました") == "ステージングで再現できました")
+        #expect(FillerRules.remove(from: "そうだね。その、次の一手を") == "そうだね。次の一手を")
+        // 残すもの: 連体詞と副詞、読点の無いもの、文中のもの
+        #expect(FillerRules.remove(from: "あの人が来た") == "あの人が来た")
+        #expect(FillerRules.remove(from: "あのララベルの球が詰まって") == "あのララベルの球が詰まって")
+        #expect(FillerRules.remove(from: "そうだね。その次の一手を") == "そうだね。その次の一手を")
+        #expect(FillerRules.remove(from: "またその、精度を高める") == "またその、精度を高める")
+        #expect(FillerRules.remove(from: "まあまあの出来です") == "まあまあの出来です")
+        #expect(FillerRules.remove(from: "なんか変だ") == "なんか変だ")
+    }
+
+    @Test func 後処理で既定で効き設定で切れる() {
+        let dictionary = YomiDictionary(entries: [])
+        let on = postprocess("えっと、了解です。送信して", dictionary: dictionary)
+        #expect(on.body == "了解です。")
+        #expect(on.command == .send)
+        #expect(on.removedFillers == 4)
+        let off = postprocess("えっと、了解です。送信して", dictionary: dictionary, removeFillers: false)
+        #expect(off.body == "えっと、了解です。")
+        #expect(off.removedFillers == 0)
+    }
+}
+
 @Suite struct 設定 {
     func write(_ json: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString).json")

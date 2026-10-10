@@ -200,6 +200,8 @@ public struct Config: Sendable, Equatable, Codable {
     public var newlineAfterUtterance = false
     /// 「設定ファイルを開く」で使うアプリ（.app のパス）。nil なら開くたびに尋ねる。
     public var editor: String?
+    /// ルールでフィラーを消す（LLM の有無に関わらず）。
+    public var removeFillers = true
 
     public init() {}
 
@@ -212,6 +214,7 @@ public struct Config: Sendable, Equatable, Codable {
         alwaysPasteBundleIds = try container.decodeIfPresent([String].self, forKey: .alwaysPasteBundleIds) ?? alwaysPasteBundleIds
         newlineAfterUtterance = try container.decodeIfPresent(Bool.self, forKey: .newlineAfterUtterance) ?? newlineAfterUtterance
         editor = try container.decodeIfPresent(String.self, forKey: .editor)
+        removeFillers = try container.decodeIfPresent(Bool.self, forKey: .removeFillers) ?? removeFillers
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -223,9 +226,10 @@ public struct Config: Sendable, Equatable, Codable {
         try container.encode(newlineAfterUtterance, forKey: .newlineAfterUtterance)
         // 項目があることが設定ファイルから分かるように、未設定でも null で書き出す
         try container.encode(editor, forKey: .editor)
+        try container.encode(removeFillers, forKey: .removeFillers)
     }
 
-    private enum CodingKeys: String, CodingKey, CaseIterable { case hotkey, formatter, history, alwaysPasteBundleIds, newlineAfterUtterance, editor }
+    private enum CodingKeys: String, CodingKey, CaseIterable { case hotkey, formatter, history, alwaysPasteBundleIds, newlineAfterUtterance, editor, removeFillers }
 
     public enum LoadError: Error, LocalizedError, Equatable {
         case unreadable(path: String, detail: String)

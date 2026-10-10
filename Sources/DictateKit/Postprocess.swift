@@ -11,15 +11,92 @@ public enum VoiceCommand: String, Sendable, Codable, Equatable {
 public struct Postprocessed: Sendable, Equatable {
     public let afterDictionary: String
     public let replacements: [YomiDictionary.Replacement]
-    /// コマンドの語を除いた本文。
+    /// コマンドの語とフィラーを除いた本文。
     public let body: String
     public let command: VoiceCommand?
+    /// ルールで消したフィラーの数。
+    public let removedFillers: Int
 }
 
-public func postprocess(_ recognized: String, dictionary: YomiDictionary) -> Postprocessed {
+/// 辞書の置換、末尾コマンドの切り出し、ルールによるフィラーの削除の順に掛ける。
+/// フィラーの削除は LLM 整形の前段で、サーバが無くても予算を超えても効く（ADR-14）。
+public func postprocess(_ recognized: String, dictionary: YomiDictionary, removeFillers: Bool = true) -> Postprocessed {
     let replaced = dictionary.apply(recognized.trimmingCharacters(in: .whitespacesAndNewlines))
-    let (body, command) = splitTrailingCommand(replaced.text)
-    return Postprocessed(afterDictionary: replaced.text, replacements: replaced.replacements, body: body, command: command)
+    let (withFillers, command) = splitTrailingCommand(replaced.text)
+    let body = removeFillers ? FillerRules.remove(from: withFillers) : withFillers
+    return Postprocessed(
+        afterDictionary: replaced.text, replacements: replaced.replacements, body: body, command: command,
+        removedFillers: removeFillers ? withFillers.count - body.count : 0
+    )
+}
+
+/// 語彙だけでフィラーを消す規則。形態素解析（MeCab、Sudachi）は曖昧語を文脈で判定せず、
+/// 小型 LLM も語彙ルールに及ばなかった（2026-10-10 の計測。ADR-14）。
+public enum FillerRules {
+    /// 文脈に別の意味が無く、どこにあっても消せる語。長い語から照合する。
+    public static let unambiguous = ["えーっと", "えっと", "えーと", "ええと", "あのー", "えー"]
+    /// 連体詞や副詞としても使う語（「あの人」「その件」「まあまあ」「なんか変だ」）。
+    /// 文頭か句読点の直後にあり、かつ直後に読点があるときだけフィラーとみなす。
+    /// 履歴 146 発話と台本 32 文で、この条件なら誤削除 0、取りこぼし 1（「あのララベルの」読点なし）。
+    public static let ambiguous = ["なんか", "あの", "その", "まあ"]
+
+    private static let comma: Set<Character> = ["、", "，", ","]
+    private static let boundary: Set<Character> = ["、", "，", ",", "。", "．", ".", "！", "!", "？", "?", "\n"]
+    private static let space: Set<Character> = [" ", "　"]
+
+    public static func remove(from text: String) -> String {
+        let chars = Array(text)
+        var out: [Character] = []
+        var i = 0
+        /// out の末尾（空白を除く）が文頭か句読点か
+        func atBoundary() -> Bool {
+            guard let last = out.last(where: { !space.contains($0) }) else { return true }
+            return boundary.contains(last)
+        }
+        /// i から word が続くか
+        func matches(_ word: String, at i: Int) -> Bool {
+            let w = Array(word)
+            return i + w.count <= chars.count && Array(chars[i..<i + w.count]) == w
+        }
+        /// j から空白を飛ばした位置
+        func skipSpaces(_ j: Int) -> Int {
+            var j = j
+            while j < chars.count, space.contains(chars[j]) { j += 1 }
+            return j
+        }
+        while i < chars.count {
+            var removed = false
+            for word in unambiguous where matches(word, at: i) {
+                i = consumeComma(after: i + word.count)
+                removed = true
+                break
+            }
+            if !removed, atBoundary() {
+                for word in ambiguous where matches(word, at: i) {
+                    let j = skipSpaces(i + word.count)
+                    guard j < chars.count, comma.contains(chars[j]) else { continue }
+                    i = skipSpaces(j + 1)
+                    removed = true
+                    break
+                }
+            }
+            if removed {
+                // 消した語の前の空白も落とす（「あの、 Laravel」→「Laravel」）
+                while let last = out.last, space.contains(last) { out.removeLast() }
+                continue
+            }
+            out.append(chars[i])
+            i += 1
+        }
+        return String(out)
+
+        /// 語の直後の空白と読点を一つだけ一緒に消す。「えっと、本番」→「本番」、「えっと本番」→「本番」
+        func consumeComma(after j: Int) -> Int {
+            let k = skipSpaces(j)
+            if k < chars.count, comma.contains(chars[k]) { return skipSpaces(k + 1) }
+            return k
+        }
+    }
 }
 
 private let commandPhrases: [(phrase: String, command: VoiceCommand)] = [("送信して", .send), ("改行して", .newline)]

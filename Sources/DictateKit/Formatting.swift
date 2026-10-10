@@ -61,9 +61,9 @@ public struct NumberMask: Sendable, Equatable {
 /// 禁止文では LLM の補完と脱落を止められないので、出力の側を構造で縛る。
 public enum FormatVerifier {
     static let punctuation: Set<Character> = ["、", "。", "，", "．", "！", "？", " ", "　", "\n", "\r", "\r\n", "\t"]
-    static let fillers = ["えっと", "えーっと", "えーと", "ええと", "えー", "あのー"]
+    static let fillers = FillerRules.unambiguous
     /// 連体詞や副詞としても使う語。生テキストで直後に読点があるときだけフィラーとみなす。
-    static let fillersBeforeComma = ["あの", "その", "まあ", "なんか"]
+    static let fillersBeforeComma = FillerRules.ambiguous
 
     public static func accepts(input: String, output: String) -> Bool {
         let source = Array(input)

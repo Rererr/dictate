@@ -312,6 +312,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if loadError == nil, !demo {
             action("発話の後に改行する", #selector(toggleNewlineAfterUtterance)).state = config.newlineAfterUtterance ? .on : .off
+            action("フィラーを消す（えっと、あのー 等）", #selector(toggleRemoveFillers)).state = config.removeFillers ? .on : .off
             action("LLM で整える（フィラーと句読点）", #selector(toggleFormatter)).state = config.formatter.enabled ? .on : .off
             // 接続できないときだけ、起動とログの項目を出す
             if config.formatter.enabled, formatterReachable != true {
@@ -453,6 +454,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleNewlineAfterUtterance() {
         updateConfig { $0.newlineAfterUtterance.toggle() }
+    }
+
+    @objc private func toggleRemoveFillers() {
+        updateConfig { $0.removeFillers.toggle() }
     }
 
     @objc private func toggleFormatter() {
@@ -632,7 +637,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let finalized = clock.now
         let raw = accumulator.finalText
-        let post = postprocess(raw, dictionary: dictionary)
+        let post = postprocess(raw, dictionary: dictionary, removeFillers: config.removeFillers)
         guard !post.afterDictionary.isEmpty else {
             fail(Messages.noResult)
             return
