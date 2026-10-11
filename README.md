@@ -19,7 +19,7 @@ A push-to-talk dictation app for macOS (Japanese). Hold a hotkey, speak, and the
 
 - 日本語専用。認識のロケール、読み辞書、末尾コマンド、フィラーの規則が日本語に固定されている。
 - 配布用のバイナリは無い。自分で組んで、自分の Mac で署名する。
-- 計測は作者 1 人の声と 1 台の Mac でのもの（肉声 20 文で CER 2.7%、キーを離してから確定まで中央値 0.10 秒）。導入の手順は 2 台目の Mac（macOS 27）で Homebrew 経路を通して確かめた。
+- 計測は作者 1 人の声と 1 台の Mac でのもの（肉声 20 文で CER 2.7%（空白と句読点を揃えた後。表記のままでは 8.2%）、キーを離してから確定まで中央値 0.05 秒、挿入の完了までの和で中央値 0.10 秒）。導入の手順は 2 台目の Mac（macOS 27）で Homebrew 経路を通して確かめた。
 - 認識誤りの自動補正はしない。読み辞書で直す（理由と、試して退けた方式は `docs/design.md` の ADR-10）。
 - 未確認の事項と既知の限界は `docs/design.md` の §9 にある。
 
@@ -46,11 +46,12 @@ dictate                    # 起動（open /opt/homebrew/opt/dictate/Dictate.app
 Spotlight や Launchpad から起動したいときは、`ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app` で写す（更新のたびに写し直す。`brew upgrade` は写した方を更新しない）。
 更新は `brew update && brew upgrade --fetch-HEAD dictate`（`brew update` が tap の checkout を進め、`--fetch-HEAD` が無いと HEAD の formula は更新されない）。
 署名はアドホックなので、更新のたびにアクセシビリティの許可を付け直す（下の「署名と許可」）。
-やめるときは `brew uninstall dictate` と `brew untap rererr/dictate`。
+やめるときは `brew uninstall dictate` と `brew untap rererr/dictate`（設定と履歴 `~/Library/Application Support/Dictate/` は残る）。
 
 ### スクリプトで入れる
 
 前提の確認、ビルド、`~/Applications/Dictate.app` への配置、起動までを一つのスクリプトが行う。
+配置の前に、動作中の Dictate（Homebrew で入れたものを含む）を終了させる。
 
 ```sh
 git clone https://github.com/Rererr/dictate.git
@@ -58,7 +59,7 @@ cd dictate
 scripts/install.sh
 ```
 
-やめるときは `scripts/install.sh --uninstall`（設定と履歴は残す）。
+やめるときは `scripts/install.sh --uninstall`（動作中の Dictate を終了させて `~/Applications/Dictate.app` を消す。設定と履歴は残す）。
 
 ### 手で入れる
 
@@ -70,6 +71,7 @@ open build/Dictate.app
 ```
 
 やめるときは、メニューから終了し、clone したディレクトリと `~/Library/Application Support/Dictate/` を消す。
+どの入れ方でも、アクセシビリティの許可の記録（`tccutil reset Accessibility com.rererr.dictate` で消せる）と、「8B に上げられる」を知らせたかの記録（UserDefaults）は残る。
 
 ### 初回にすること
 
@@ -89,7 +91,7 @@ https://github.com/Rererr/dictate を、この Mac に導入してください�
 
 1. 前提を確かめる: macOS 26 以降、Apple Silicon、`swift --version` が 6.2 以降。満たさなければ、足りないものを伝えて止まる。
 2. 作業用のディレクトリに clone し、README.md を読む。
-3. `scripts/install.sh` で組んで ~/Applications/Dictate.app に置き、起動する。失敗したら、エラーをそのまま見せる。
+3. `scripts/install.sh` で組んで ~/Applications/Dictate.app に置き、起動する（動作中の Dictate があれば終了させる）。失敗したら、エラーをそのまま見せる。
 4. `scripts/test.sh` を流し、結果を伝える。
 5. あなたにはできない操作を、私に順に案内する: マイクの許可、アクセシビリティの許可、日本語の音声認識モデルの追加。メニューバーのマイクのアイコンを開くと、この三つの状態と、足りないものの設定を開く項目が出るので、三つとも揃うまで案内する。
 
@@ -124,11 +126,12 @@ dictate                    # launches the app (same as open /opt/homebrew/opt/di
 To launch from Spotlight or Launchpad, copy it with `ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app` (copy it again after every upgrade; `brew upgrade` does not touch the copy).
 Update with `brew update && brew upgrade --fetch-HEAD dictate` (`brew update` advances the tap checkout; without `--fetch-HEAD`, a HEAD-only formula is never updated).
 The build is ad-hoc signed, so after every update you have to grant the Accessibility permission again (see below).
-Uninstall with `brew uninstall dictate` and `brew untap rererr/dictate`.
+Uninstall with `brew uninstall dictate` and `brew untap rererr/dictate` (your settings and history in `~/Library/Application Support/Dictate/` stay).
 
 ### Install script
 
 One script checks the requirements, builds, copies the app to `~/Applications/Dictate.app`, and launches it.
+It quits a running Dictate (including a Homebrew install) before copying.
 
 ```sh
 git clone https://github.com/Rererr/dictate.git
@@ -136,7 +139,7 @@ cd dictate
 scripts/install.sh
 ```
 
-Uninstall with `scripts/install.sh --uninstall` (keeps your settings and history).
+Uninstall with `scripts/install.sh --uninstall` (quits a running Dictate and removes `~/Applications/Dictate.app`; keeps your settings and history).
 
 ### Manual install
 
@@ -148,6 +151,7 @@ open build/Dictate.app
 ```
 
 To uninstall, quit from the menu and delete the cloned directory and `~/Library/Application Support/Dictate/`.
+Whichever way you installed, the Accessibility permission record (`tccutil reset Accessibility com.rererr.dictate` clears it) and the one-time "8B available" notice flag (UserDefaults) remain.
 
 ### First launch
 
@@ -156,7 +160,7 @@ To uninstall, quit from the menu and delete the cloned directory and `~/Library/
 3. The top of the menu shows the status of the microphone, Accessibility, and the Japanese recognition model. When something is missing, the menu also offers an item that opens the relevant setting (the model row updates the next time you open the menu after changing the setting). A missing model is also announced at launch.
 4. Put the cursor in a text field, hold ⌃⌥⌘D while speaking, then release.
 
-With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Choose "アクセシビリティの許可を付け直す（オンに見えて効かないとき）" in the menu (it runs `tccutil reset Accessibility com.rererr.dictate` and relaunches the app so that it reappears in the list), or create a self-signed certificate once with `scripts/make-cert.sh` so that rebuilds keep the permission.
+With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Choose "アクセシビリティの許可を付け直す（オンに見えて効かないとき）" in the menu (it runs `tccutil reset Accessibility com.rererr.dictate` and relaunches the app so that it reappears in the list), or create a self-signed certificate once with `scripts/make-cert.sh` so that rebuilds keep the permission (`scripts/make-cert.sh --delete` removes it). Right after creating the certificate, the permission granted to the ad-hoc build does not carry over, so grant it once more with the menu item above.
 
 The certificate has a trade-off. Its key is imported so that `codesign` can use it without confirmation, so any program running as your user can sign something with this certificate and Dictate's bundle ID, and that program inherits Dictate's Accessibility permission. Ad-hoc signing has no such path. If you installed with Homebrew, the build runs in Homebrew's sandbox, cannot reach the keychain, and stays ad-hoc signed even if the certificate exists.
 
@@ -169,7 +173,7 @@ Install https://github.com/Rererr/dictate on this Mac.
 
 1. Check the requirements: macOS 26 or later, Apple Silicon, and `swift --version` 6.2 or later. If any is missing, tell me what is missing and stop.
 2. Clone the repository into a working directory and read README.md.
-3. Run `scripts/install.sh`, which builds the app, copies it to ~/Applications/Dictate.app, and launches it. If it fails, show me the error as is.
+3. Run `scripts/install.sh`, which builds the app, copies it to ~/Applications/Dictate.app, and launches it (it quits a running Dictate first). If it fails, show me the error as is.
 4. Run `scripts/test.sh` and report the result.
 5. Walk me through the steps you cannot do yourself: microphone permission, Accessibility permission, and adding the Japanese speech recognition model. The menu under the microphone icon in the menu bar shows the status of all three and offers items that open the missing settings; guide me until all three are satisfied.
 
@@ -215,8 +219,9 @@ Homebrew で入れた場合は、ビルドが Homebrew のサンドボックス�
 | 「フィラーだけを認識したため、何も挿入しません」と出る | 発話が「えっと」「あのー」だけだった | 本文を話す。フィラーを本文として入れたいなら、メニューの「フィラーを消す（えっと、あのー 等）」を切る |
 | 字幕は出るが、入力欄に文が入らない | アクセシビリティの許可が無い。組み直した後なら、アドホック署名で別のアプリ扱いになり、許可が外れている | メニューの「アクセシビリティ」の行を見る。一覧でオンに見えて効かないときは、メニューの「アクセシビリティの許可を付け直す」を選ぶ。繰り返すなら `scripts/make-cert.sh` で証明書を作る |
 | 「音声認識モデルが導入されていません」と出る | 日本語の認識モデルが端末に無い | メニューの「音声入力の設定を開く」から、システム設定 > キーボード > 音声入力で日本語を追加する |
-| `scripts/bundle.sh` が「package requires minimum Swift tools version 6.2」で止まる | Swift が 6.2 より古い | `swift --version` で確かめ、Command Line Tools を更新する |
+| `scripts/bundle.sh` が「is using Swift tools version 6.2.0 but the installed version is …」で止まる | Swift が 6.2 より古い | `swift --version` で確かめ、Command Line Tools を更新する |
 | 同じ語がいつも違う表記になる | 認識器の癖。アプリは自動で補正しない | `dictionary.tsv` に `表記<TAB>読み` の行を足し、「設定と辞書を再読み込み」を選ぶ |
+| 「N 行目を読めません」「読めない行を飛ばし、残りの行で辞書を作りました」と出る | `dictionary.tsv` に列が 3 つ以上ある行か、読みを作れない行がある | 読めた行と音声入力はそのまま動く。行を直して「設定と辞書を再読み込み」を選ぶ。メニューの「辞書」の行に読めなかった行数が出る |
 
 ## 使い方
 
@@ -228,18 +233,23 @@ Homebrew で入れた場合は、ビルドが Homebrew のサンドボックス�
 出てきた窓の上で、キーの組み合わせか、マウスの中ボタンかサイドボタンを押して保存する。
 macOS 自体のショートカットと重なる組み合わせには警告が出る。
 他のアプリのホットキーとの重なりは検出できないので、保存した後に一度押して確かめる。
-マウスボタンを登録した場合は、その受け取りにアクセシビリティの許可を使う。
+マウスボタンを登録した場合は、その受け取りにアクセシビリティの許可を使う。許可が無いと「設定エラーのため停止中」になり、許可を付けた後に「設定と辞書を再読み込み」を選ぶと動き出す。
 話している途中の文は画面下の字幕に出て、入力欄には確定した文だけが入る。
 挿入できたときは字幕が閉じるだけで、何も知らせない。
 挿入できなかったときや、整形を採用しなかったときだけ、同じ場所に理由のトーストが出る。
 発話の末尾を「送信して」で終えると、その語を除いて挿入した後に Return を送る。
 「改行して」で終えると、Shift+Return を送る（チャットの入力欄で、送信せずに改行する）。
 どちらも末尾のときだけ効き、文中の同じ語は本文として入る。
+照合は表記でなく読みで行うので、「改行して」が「開業して」と認識されても改行になる（本当に「開業して」で言い切った文も改行になる）。
+コマンドの前は、読点か仮名で区切る（「了解です送信して」「了解です、送信して」）。
+直前が漢字、カタカナ、英数字の語（「メールを再送信して」「メール送信して」「BCC送信して」「新規開業して」）は複合語の一部とみなし、コマンドにせず本文のまま入れる。送らない側に倒すのは、本文の途中で Return が飛ぶ事故を避けるためである。「以上送信して」も送らないので、「以上、送信して」と区切る。
 
 フィラー（えっと、えーっと、えーと、ええと、えー、あのー）は、認識結果からそのまま消して挿入する。
-ただし、直前の仮名の長音になる形（「へえー」「ねえー」「いいえー」）は感動詞として残し、2 文字の「えー」は直前が仮名でないときだけ消す。
+ただし、直前の仮名の長音になる形（「へえー」「ねえー」「いいえー」、「まあのー」の「あのー」）は感動詞や語の一部として残し、2 文字の「えー」は直前が仮名でないときだけ消す。
 「あの」「その」「まあ」「なんか」は、文頭か句読点の直後にあって読点が続くときだけ消す（「あの人」「その件」は残る）。
 メニューの「フィラーを消す」で切れる。LLM 整形は要らない。
+
+挿入できたときは何も出ない。挿入できなかったときと、本文なしの「送信して」でキーを送れなかったときは、理由のトーストが出て、許可が無ければ 0.5 秒後にシステム設定の該当ページを開く。履歴に書けなかったときは、その旨を同じトーストの後ろに続ける。
 
 メニューの「発話の後に改行する」をオンにすると、コマンドを言わなくても、挿入のたびに Shift+Return を送る。
 押して離すまでの 1 回の発話が 1 行になる。
@@ -251,9 +261,11 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
 
 - 状態: ホットキー、マイク、アクセシビリティ、日本語の認識モデル、整形（有効なら接続の状態と所要）、履歴、辞書
 - 足りないものがあるときだけ: 「マイクの許可を求める」または「マイクの設定を開く」、「アクセシビリティの設定を開く」と「アクセシビリティの許可を付け直す（オンに見えて効かないとき）」、「音声入力の設定を開く（日本語を追加）」
-- 切り替え: 「発話の後に改行する」「フィラーを消す（えっと、あのー 等）」「LLM で整える（フィラーと句読点）」。整形の計測で余裕があれば「整形モデルを 8B に上げる」、8B が予算に入らなければ「整形モデルを 4B に替える」
-- 整形サーバに接続できないときだけ: 「整形サーバを起動」（動作中のはずなら「整形サーバを起動し直す」）「整形サーバのログを開く」「ローカル LLM の手引きを開く」
-- 「ホットキーを登録…」「設定ファイルを開く」「設定と辞書を再読み込み」「直前の発話をコピー」「終了」
+- 切り替え: 「発話の後に改行する」「フィラーを消す（えっと、あのー 等）」「LLM で整える（句読点）」。モデルと起動コマンドが既定の組で、整形の計測で余裕があれば「整形モデルを 8B に上げる（約 4.3 GB のダウンロード）」、8B が予算に入らなければ「整形モデルを 4B に替える（約 2.5 GB のダウンロード）」
+- 整形が有効で接続できないときだけ: `startCommand` があれば「整形サーバを起動」（起動中は出ない。動作中のはずなら「整形サーバを起動し直す（動作中だが応答がない）」）、ログがあれば「整形サーバのログを開く」、「ローカル LLM の手引きを開く」
+- 「ホットキーを登録…」「設定ファイルを開く…」（`editor` を決めた後は「設定ファイルを開く」）「設定と辞書を再読み込み」「直前の発話をコピー」「終了」
+
+`--select "項目名"` で項目を選ぶときは、上の名前と完全に一致させる。
 
 ## 設定
 
@@ -262,8 +274,9 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
 | ファイル | 内容 |
 |---|---|
 | `config.json` | ホットキー、LLM 整形、履歴、常に貼り付けで挿入するアプリ、発話の後の改行、フィラーの削除、設定ファイルを開くアプリ |
-| `dictionary.tsv` | 読み辞書。`表記<TAB>読み`（読みは省略可）。例は `eval/dictionary.tsv` |
-| `history.jsonl` | 履歴（追記専用）。生テキスト、挿入した文、経路、所要時間。`history.maxMegabytes`（既定 20）を超えると `history.jsonl.1` に繰り越し、前の繰り越し分は消える。残したくなければ `history.enabled` を `false` にする |
+| `dictionary.tsv` | 読み辞書。`表記<TAB>読み`（読みは省略可）。`#` で始まる行はコメント。BOM と CRLF は許す。読めない行（列が 3 つ以上、読みを作れない）は飛ばして残りで動き、行番号と理由をトーストとメニューで知らせる。初期値は無く、例は `eval/dictionary.tsv` |
+| `history.jsonl` | 履歴（追記専用）。生テキスト、挿入した文、経路、所要時間。`history.maxMegabytes`（既定 20、`0` で上限なし）を超えると `history.jsonl.1` に繰り越し、前の繰り越し分は消える。残したくなければ `history.enabled` を `false` にする |
+| `formatter.log` | アプリが起動した整形サーバの出力。メニューの「整形サーバのログを開く」が開く |
 
 `config.json` の全項目と既定値（アプリが書き出すときは、項目名のアルファベット順に並ぶ）:
 
@@ -291,38 +304,38 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
 
 `hotkey` は登録の窓が書く。手で書く場合、`code` は仮想キーコードで、マウスボタンは `{ "type": "mouse", "button": 3, "modifiers": [] }` の形になる（2 が中ボタン、3 以降がサイドボタン）。
 
-書式が壊れていると、既定値には読み替えず、箇所を示して停止する。
+書式が壊れているとき、知らない項目名があるとき、値が範囲外のとき（`budgetSeconds` は 0 より大きく 30 以下、`temperature` は 0〜2、`maxTokens` は 1〜4096、`endpoint` は http か https）は、既定値には読み替えず、箇所を示して停止する。
 直してからメニューの「設定と辞書を再読み込み」を選ぶ。
 
 メニューの「設定ファイルを開く」を選ぶと、全項目を現在の値で書き出してから `config.json` を開く。
 初回はどのアプリで開くかを尋ねる（テキストエディットか、選んだアプリ）。「次回からこのアプリで開く」にチェックを入れると `editor` にそのアプリのパスが入り、以後は尋ねない。選び直したいときは `editor` を `null` にする。
 違うところだけ直して保存し、「設定と辞書を再読み込み」を選ぶ。
 
-LLM 整形は、規則が残した曖昧なフィラーと句読点を整えるもので、手元で動かすサーバに文を送って結果を受け取る。
+LLM 整形は、規則でフィラーを消した後の文の句読点と空白を整えるもので、手元で動かすサーバに文を送って結果を受け取る。本人の履歴で測ると、フィラーで LLM が追加で効いた発話は無く、句読点と空白が変わった発話が 136 件中 12〜17 件だった（`docs/design.md` の ADR-14）。
 はじめての人向けの手順と、モデルをどう選んだかは [docs/local-llm.md](docs/local-llm.md) にある。
-メニューの「LLM で整える（フィラーと句読点）」をオンにしたとき、サーバに接続できなければ、`formatter.startCommand` のコマンドでアプリがサーバを起動する。既定は mlx-lm で既定のモデルを立てるコマンドで、mlx-lm が無ければ入れ方をトーストで知らせる。`""` にすると起動せず、接続できないことだけを知らせる（`null` は既定の意味）。
+メニューの「LLM で整える（句読点）」をオンにしたときと、オンのままアプリを起動したときに、サーバに接続できなければ、`formatter.startCommand` のコマンドでアプリがサーバを起動する。既定は mlx-lm で既定のモデルを立てるコマンドで、mlx-lm が無ければ入れ方をトーストで知らせる。`""`（空白だけでも同じ）にすると起動せず、接続できないことだけを知らせる（`null` は既定の意味）。整形はサーバが温まった後の発話から効き、読み込み中と接続できない間はそのまま挿入する。
 アプリが起動したサーバは、オフにしたときと終了時にアプリが止める。
 `budgetSeconds` 以内に結果が届かなければ、整形前の文を挿入する。遅いモデルを使うなら、この値を延ばす。
-`systemPrompt` を書くと組み込みのプロンプトを置き換える。ただし、挿入されるのは「フィラーの削除と句読点の変更だけ」の検証を通った出力に限られ、それ以外の書き換えは捨てて整形前の文を挿入する。
+`systemPrompt` を書くと組み込みのプロンプトを置き換える。ただし、挿入されるのは「語彙にあるフィラーの削除と句読点・空白の変更だけ」の検証を通った出力に限られ、それ以外の書き換えは捨てて整形前の文を挿入する。
 
 ```sh
 # startCommand の既定値（手で立てるときも同じ）。モデルは 4B が既定で、余裕のある Mac にはメニューで 8B への切り替えを出す
 mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
 ```
 
-GPU に使えるメモリが 10 GB 未満の Mac（メモリ 8 GB）では、4B でも遅くて実用にならないので LLM 整形をオンにできない。フィラーは規則で消える。
+GPU に使えるメモリが 10 GB 未満の Mac（メモリ 8 GB）では、4B でも遅くて実用にならないので、メニューの切り替えでも、設定ファイルで有効にしたうえでの「整形サーバを起動」でも、理由を知らせて整形を動かさない。フィラーは規則で消える。
 
 ## よくある質問
 
 **LLM 整形とは何か。ローカル LLM を触ったことがない。**
-話した文の句読点を整え、規則では消せない曖昧なフィラーを消す任意の機能で、手元の Mac で動くサーバを使う。
-入れ方から動作確認までを [docs/local-llm.md](docs/local-llm.md) に書いた。使わなくても音声入力は動き、よくあるフィラー（えっと、えー、あのー 等）は規則で消える。
+話した文の句読点と空白を整える任意の機能で、手元の Mac で動くサーバを使う。
+入れ方から動作確認までを [docs/local-llm.md](docs/local-llm.md) に書いた。使わなくても音声入力は動き、フィラー（えっと、えー、あのー 等）は LLM なしの規則で消える。
 
 **なぜ既定のモデルが Qwen3-4B で、8B は任意なのか。**（余裕のある Mac では、初回に一度だけ「8B に上げられる」と知らせ、以後はメニューの項目だけが残る。）
 「キーを離して 1 秒以内」に入るかで決めている。M2 の MacBook Air では 8B が中央値 1.2 秒で入らず、4B は 0.7 秒でフィラーを消せた。M4 Pro の Mac mini では 8B が 0.5 秒で、数値の扱いは 8B の方が良い。そこで 4B を既定にし、余裕のある Mac にはメニューで 8B への切り替えを出す。1.7B 以下はフィラーを消さずに返す。27B は 3〜7 秒かかる。計測の表は [docs/local-llm.md](docs/local-llm.md#モデルをどう選んだか) にある。
 
 **話した内容はどこかに送られるか。**
-送られない。認識は Apple の端末内モデル、整形は手元のサーバで、どちらも Mac の外に出ない。履歴は `~/Library/Application Support/Dictate/history.jsonl` に文字として残り、音声は保存しない。
+既定の設定では送られない。認識は Apple の端末内モデルで、整形の接続先は既定で `127.0.0.1`（この Mac）である。`formatter.endpoint` を他のホストにすれば、整形に送る本文はそこへ出る。履歴は `~/Library/Application Support/Dictate/history.jsonl` に文字として残り、音声は保存しない。
 
 **他の人の声や英語でも使えるか。**
 認識のロケール、読み辞書、末尾コマンド、フィラーの規則が日本語に固定されている。英語は対象外である。
@@ -345,12 +358,12 @@ scripts/test.sh
 素の `swift test` は、Command Line Tools だけの環境でテスト用マクロのプラグインを見つけられずに失敗することがある。
 `scripts/test.sh` はプラグインの場所を明示する。
 
-テストは三つの層でできている。
+テストは四つの層でできている。
 
 - 単体: 後処理（辞書、コマンド、フィラーの規則、数値マスク、整形の検証）、設定の読み書き、履歴、整形サーバの子プロセス
 - 一連: 認識結果の文字列から挿入する文とコマンドが決まるまで（辞書 → コマンド → フィラーの規則 → 整形 → 予算）を、アプリ本体と同じ判断の順で、LLM を固定の応答に置き換えて通す。合成音声（OS の `say` の Kyoko）を認識器に流し、確定まで通ることも確かめる（日本語の認識モデルと Kyoko の声がある Mac でだけ走る）
 - 起動: `scripts/e2e.sh` が `build/Dictate.app` を組み、署名と Info.plist を確かめ、`--demo` で起動して動き続けることと SIGTERM で終了できることを見る。続けて通常モードを、環境変数 `DICTATE_HOME` で隔離した設定ディレクトリで起動し、設定の `startCommand` を実行することを見る。動作中の Dictate と本人の設定には触らない
-- 整形サーバの実機: `DICTATE_LLM_E2E=1` を付けたときだけ走る。`scripts/test.sh` では本物の `mlx_lm.server` を別のポート（8130）で起動し、接続、温め、整形、停止、接続不可までをアプリと同じ経路で通す。`scripts/e2e.sh` では実アプリを隔離した設定で起動し、1 回目の起動コマンドが失敗した後にメニューの「整形サーバを起動」を選んで（`--select`）サーバが立つことと、アプリの終了でサーバが止まることを見る（mlx-lm とモデルのキャッシュが要る。動作中の Dictate のサーバには触らない）
+- 整形サーバの実機: `DICTATE_LLM_E2E=1` を付けたときだけ走る。`DICTATE_LLM_BENCH=1` を付けると、本人の履歴を規則の前後で LLM に通して効果を数える計測（`FormatterSecondStageBench`）も走る（`docs/local-llm.md` の「自分の Mac で測る」）。`scripts/test.sh` では本物の `mlx_lm.server` を別のポート（8130）で起動し、接続、温め、整形、停止、接続不可までをアプリと同じ経路で通す。`scripts/e2e.sh` では実アプリを隔離した設定で起動し、1 回目の起動コマンドが失敗した後にメニューの「整形サーバを起動」を選んで（`--select`）サーバが立つことと、アプリの終了でサーバが止まることを見る（mlx-lm とモデルのキャッシュが要る。動作中の Dictate のサーバには触らない）
 
 ```sh
 scripts/e2e.sh
