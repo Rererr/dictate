@@ -5,8 +5,10 @@ public enum InsertionOutcome: Equatable, Sendable {
     case silent
     /// 本文が空でコマンドも無い。フィラーだけの発話。
     case nothingToInsert
-    /// 挿入を試みなかった、または入らなかった。reason が nil なら、本文なしのコマンドをアクセシビリティの許可がなくて送れなかった。
-    case notInserted(reason: String?)
+    /// 挿入を試みなかった、または入らなかった。
+    case notInserted(reason: String)
+    /// 本文なしのコマンドを、アクセシビリティの許可がなくて送れなかった。取り出せる本文は無い。
+    case commandNotSent
     /// AX が成功を返したが、入ったと確かめられなかった。sendSkipped なら「送信して」を見送った。
     case unverified(reason: String, sendSkipped: Bool)
     /// 入ったが、整形を採用しなかった。
@@ -41,7 +43,7 @@ public enum InsertionRules {
         case (.none, nil):
             // 理由なしの none は、本文が空で挿入を試みなかったとき
             if command == nil { return .nothingToInsert }
-            return sends ? .silent : .notInserted(reason: nil)
+            return sends ? .silent : .commandNotSent
         case (.ax, let reason?):
             return .unverified(reason: reason, sendSkipped: command == .send)
         case (.ax, nil), (.paste, _):

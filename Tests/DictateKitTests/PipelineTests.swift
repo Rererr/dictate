@@ -83,10 +83,10 @@ import Testing
     @Test func コマンドだけの発話は何も入れずキーだけ送る() async {
         let trusted = await run("送信して") { _ in "" }
         #expect(trusted == Result(text: "", command: .send, formatStatus: nil, sends: true, outcome: .silent))
-        // キーを送る権限が無ければ、送れなかったと知らせる（フィラーだけの発話とは区別する）
+        // キーを送る権限が無ければ、送れなかったと知らせる（フィラーだけの発話とも、本文を挿入できなかった発話とも区別する。取り出せる本文が無い）
         let untrusted = await run("送信して", accessibilityTrusted: false) { _ in "" }
         #expect(untrusted.sends == false)
-        #expect(untrusted.outcome == .notInserted(reason: nil))
+        #expect(untrusted.outcome == .commandNotSent)
     }
 
     @Test func 発話の後に改行する設定は本文のある発話にだけ改行を送る() async {

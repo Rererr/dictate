@@ -46,6 +46,8 @@ struct DemoScenario {
         .init(title: "デモ: 挿入を確認できない", steps: speaking + ending(Messages.unverified)),
         .init(title: "デモ: 挿入を確認できず送信を見送り", steps: speaking + ending(Messages.unverifiedNotSent)),
         .init(title: "デモ: アクセシビリティの許可なし", steps: speaking + ending(Messages.accessibilityDenied)),
+        .init(title: "デモ: 本文なしのコマンドで許可なし", steps: [Step(after: .zero, action: .caption(.recording, "送信して")), Step(after: .seconds(1), action: .caption(.working, Messages.finalizing))]
+            + ending(Messages.commandNotSent)),
         .init(title: "デモ: マイクの許可なし", steps: [Step(after: .zero, action: .toast(Messages.microphoneDenied))]),
         toast("デモ: 起動時に認識モデルが未導入", Messages.modelNotInstalled),
         toast("デモ: 整形をオンにしたが接続できない", Messages.formatterUnreachable),
@@ -82,7 +84,7 @@ struct DemoScenario {
         ).localizedDescription)),
         toast("デモ: 設定のホットキーに修飾キーがない", Messages.loadFailed(Config.LoadError.hotkey(.needsModifier).localizedDescription)),
         toast("デモ: マウスボタンのホットキーで許可がない", Messages.loadFailed(MouseButtonTap.PermissionError().localizedDescription)),
-        toast("デモ: 辞書の行を読めない", Messages.loadFailed(YomiDictionary.ParseError.malformedLine(number: 3, content: "Laravel ららべる 余分").localizedDescription)),
+        toast("デモ: 辞書の行を読めない", Messages.dictionarySkipped([.malformedLine(number: 3, content: "Laravel\tららべる\t余分")])),
         toast("デモ: 履歴に書けない", Messages.historyFailed("“history.jsonl”を保存するためのアクセス権がありません。")),
     ]
 

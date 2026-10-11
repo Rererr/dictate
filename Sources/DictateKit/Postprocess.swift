@@ -132,12 +132,24 @@ func splitTrailingCommand(_ text: String) -> (body: String, command: VoiceComman
         guard let length = (phrase.count - 2...phrase.count + 4).first(where: { length in
             length > 0 && length <= stripped.count && YomiDictionary.reading(of: String(stripped.suffix(length))) == reading
         }) else { continue }
+        let head = String(stripped.dropLast(length))
+        // 「再送信」「メール送信」「BCC送信」の「送信」は複合語の後半で、送れば本文の途中で Return が飛ぶ。
+        // 単語境界では防げない（トークナイザは「再|送信」と切る。実測）ので、直前の文字種で判定する
+        if let previous = head.last, previous.unicodeScalars.contains(where: isCompoundScalar) { continue }
         // 前の文の句点は本文の一部として残し、コマンドとの区切りの読点だけ落とす
-        let body = String(stripped.dropLast(length))
-            .trimmingTrailing(CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "、，,")))
+        let body = head.trimmingTrailing(CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "、，,")))
         return (body, command)
     }
     return (text, nil)
+}
+
+/// 漢字（々を含む）、カタカナ（長音を含む）、英字、数字。平仮名と句読点の後はコマンドになる。
+private func isCompoundScalar(_ scalar: Unicode.Scalar) -> Bool {
+    switch scalar.value {
+    case 0x3005, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x30A1...0x30FF, 0xFF66...0xFF9F,
+         0x30...0x39, 0x41...0x5A, 0x61...0x7A, 0xFF10...0xFF19, 0xFF21...0xFF3A, 0xFF41...0xFF5A: true
+    default: false
+    }
 }
 
 extension String {

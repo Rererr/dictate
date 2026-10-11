@@ -34,6 +34,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var state = State.idle
     private var config = Config()
     private var dictionary = YomiDictionary(entries: [])
+    private var dictionarySkipped: [YomiDictionary.ParseError] = []
     private var hotKey: (any HotkeyListener)?
     private var recorder: HotkeyRecorder?
     /// これより短く離した押下は誤操作として、何も出さずに捨てる。
@@ -133,12 +134,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         loadError = nil
         do {
             config = try Config.load(from: AppPaths.config)
-            dictionary = FileManager.default.fileExists(atPath: AppPaths.dictionary.path)
-                ? try YomiDictionary(tsv: String(contentsOf: AppPaths.dictionary, encoding: .utf8))
-                : YomiDictionary(entries: [])
+            let parsed = FileManager.default.fileExists(atPath: AppPaths.dictionary.path)
+                ? YomiDictionary.parse(tsv: try String(contentsOf: AppPaths.dictionary, encoding: .utf8))
+                : (dictionary: YomiDictionary(entries: []), skipped: [])
+            dictionary = parsed.dictionary
             if !demo {
                 hotKey = try makeHotkeyListener(config.hotkey, onPress: { [weak self] in self?.pressed() }, onRelease: { [weak self] in self?.released() })
             }
+            // メニューの他の項目を切り替えるたびに同じ行を知らせ直さない。明示的な再読み込みでは直っていないことを知らせる
+            if !parsed.skipped.isEmpty, !keepFormatterState || parsed.skipped != dictionarySkipped {
+                overlay.showToast(Messages.dictionarySkipped(parsed.skipped))
+            }
+            dictionarySkipped = parsed.skipped
         } catch {
             // 壊れた設定を既定値に読み替えない。ホットキーを外したまま理由を出す
             loadError = error.localizedDescription
@@ -206,6 +213,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// サーバを起動し、待ち受けが開くまで 1 秒ごとに確かめる。
     /// 待ち受けはモデルの読み込みより先に開くので、開かないのはポート違いかハングであり、60 秒で諦める。
     private func startFormatterServer(_ command: String) {
+        // メニューの「起動」「起動し直す」は ensureFormatter の判定を通らない。config.json で有効にされていても起動しない
+        guard Machine.supportsFormatter else {
+            overlay.showToast(Messages.formatterUnsupported(gpuMemoryGB: Machine.gpuMemoryGB))
+            return
+        }
         Task {
             // 実行ファイルが無いときは、起動して 127 で落とすより先に入れ方を示す
             guard await FormatterServer.isExecutableAvailable(command) else {
@@ -385,7 +397,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 info(config.formatter.enabled ? "整形: 有効（\(reachability)）" : "整形: 無効")
             }
             info("履歴: \(config.history.enabled ? "有効" : "無効")")
-            info("辞書: \(dictionary.isEmpty ? "なし" : "読み込み済み")")
+            info("辞書: \(dictionary.isEmpty ? "なし" : "読み込み済み")\(dictionarySkipped.isEmpty ? "" : "（\(dictionarySkipped.count) 行を読めなかった）")")
         }
         menu.addItem(.separator())
         if !demo {
@@ -414,7 +426,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if loadError == nil, !demo {
             action("発話の後に改行する", #selector(toggleNewlineAfterUtterance)).state = config.newlineAfterUtterance ? .on : .off
             action("フィラーを消す（えっと、あのー 等）", #selector(toggleRemoveFillers)).state = config.removeFillers ? .on : .off
-            action("LLM で整える（フィラーと句読点）", #selector(toggleFormatter)).state = config.formatter.enabled ? .on : .off
+            action("LLM で整える（句読点）", #selector(toggleFormatter)).state = config.formatter.enabled ? .on : .off
             if canUpgradeFormatterModel { _ = action("整形モデルを 8B に上げる（約 4.3 GB のダウンロード）", #selector(upgradeFormatterModel)) }
             if canDowngradeFormatterModel { _ = action("整形モデルを 4B に替える（約 2.5 GB のダウンロード）", #selector(downgradeFormatterModel)) }
             // 接続できないときだけ、起動とログの項目を出す
@@ -813,7 +825,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         overlay.closeCaption()
         lastUtterance = text.isEmpty ? lastUtterance : text
-        let recorded = record(UtteranceRecord(
+        let historyFailure = record(UtteranceRecord(
             id: id, startedAt: recording.startedAt, recordingSeconds: (released - recording.started).seconds,
             raw: raw, runs: accumulator.runs, post: post, inserted: insertion.method == .none ? "" : text,
             insertion: insertion, app: app,
@@ -823,18 +835,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 insert: (inserted - postprocessed).seconds
             )
         ))
-        guard recorded else { return }
 
         let outcome = InsertionRules.outcome(text: text, insertion: insertion, command: command, sends: sends, formatSkipped: formatSkipped)
-        switch outcome {
-        case .silent: break
-        case .nothingToInsert: overlay.showToast(Messages.onlyFillers)
-        case .notInserted(let reason): overlay.showToast(reason ?? Messages.accessibilityDenied)
-        case .unverified(let reason, let sendSkipped): overlay.showToast(sendSkipped ? Messages.unverifiedNotSent : reason)
-        case .formatSkipped(let status): if let note = Messages.formatSkipped(status) { overlay.showToast(note) }
+        let note: String? = switch outcome {
+        case .silent: nil
+        case .nothingToInsert: Messages.onlyFillers
+        case .notInserted(let reason): reason
+        case .commandNotSent: Messages.commandNotSent
+        case .unverified(let reason, let sendSkipped): sendSkipped ? Messages.unverifiedNotSent : reason
+        case .formatSkipped(let status): Messages.formatSkipped(status)
         }
-        // 許可が無くて挿入できなかったときだけ、設定を開く（挿入するものが無かったときは開かない）
-        if case .notInserted = outcome, !AXIsProcessTrusted() { openSettings(Self.accessibilityPane, afterToast: true) }
+        // トーストは 1 枚なので、履歴の失敗（record が出した知らせ）を挿入の知らせで上書きせず並べる
+        if let note { overlay.showToast(note + (historyFailure ?? "")) }
+        // 許可が無くて挿入や送信ができなかったときだけ、設定を開く（挿入するものが無かったときは開かない）
+        switch outcome {
+        case .notInserted, .commandNotSent: if !AXIsProcessTrusted() { openSettings(Self.accessibilityPane, afterToast: true) }
+        default: break
+        }
     }
 
     private static let microphonePane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
@@ -860,16 +877,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         overlay.showToast(message)
     }
 
-    /// 書けなかったら理由を出して false を返す。
+    /// 書けなかったら理由を出し、その文言を返す。
     @discardableResult
-    private func record(_ entry: some Encodable) -> Bool {
-        guard config.history.enabled else { return true }
+    private func record(_ entry: some Encodable) -> String? {
+        guard config.history.enabled else { return nil }
         do {
             try HistoryWriter(url: AppPaths.history, rotateAtBytes: config.history.rotateAtBytes).append(entry)
-            return true
+            return nil
         } catch {
-            overlay.showToast(Messages.historyFailed(error.localizedDescription))
-            return false
+            let message = Messages.historyFailed(error.localizedDescription)
+            overlay.showToast(message)
+            return message
         }
     }
 }

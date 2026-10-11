@@ -48,20 +48,21 @@ import Testing
         #expect(result.text == "軽管栄養")
     }
 
-    @Test func TSVは読みを省略でき空行とコメントを読み飛ばす() throws {
-        let parsed = try YomiDictionary(tsv: "# 介護\n経管栄養\n\nLaravel\tららべる\n")
-        #expect(parsed.apply("軽管栄養とララベル").text == "経管栄養とLaravel")
+    @Test func TSVは読みを省略でき空行とコメントを読み飛ばす() {
+        let parsed = YomiDictionary.parse(tsv: "# 介護\n経管栄養\n\nLaravel\tららべる\n")
+        #expect(parsed.dictionary.apply("軽管栄養とララベル").text == "経管栄養とLaravel")
+        #expect(parsed.skipped.isEmpty)
     }
 
-    @Test func TSVはCRLFとBOMがあっても効く() throws {
-        let parsed = try YomiDictionary(tsv: "\u{FEFF}経管栄養\r\nLaravel\tららべる\r\n")
-        #expect(parsed.apply("軽管栄養とララベル").text == "経管栄養とLaravel")
+    @Test func TSVはCRLFとBOMがあっても効く() {
+        let parsed = YomiDictionary.parse(tsv: "\u{FEFF}経管栄養\r\nLaravel\tららべる\r\n")
+        #expect(parsed.dictionary.apply("軽管栄養とララベル").text == "経管栄養とLaravel")
     }
 
-    @Test func TSVの列が多い行は行番号つきで拒否する() {
-        #expect(throws: YomiDictionary.ParseError.malformedLine(number: 2, content: "a\tb\tc")) {
-            try YomiDictionary(tsv: "経管栄養\na\tb\tc")
-        }
+    @Test func TSVの読めない行は行番号と理由を残して読み飛ばし残りの行で辞書を作る() {
+        let parsed = YomiDictionary.parse(tsv: "経管栄養\na\tb\tc\nLaravel\tららべる\nー")
+        #expect(parsed.dictionary.apply("軽管栄養とララベル").text == "経管栄養とLaravel")
+        #expect(parsed.skipped == [.malformedLine(number: 2, content: "a\tb\tc"), .emptyKey(number: 4, surface: "ー")])
     }
 }
 

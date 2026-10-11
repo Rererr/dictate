@@ -1,4 +1,5 @@
 import DictateKit
+import SpeechCore
 
 /// 字幕とトーストに出す文言。デモ再生と実動作で同じものを使う。
 /// トーストの文言は、1 文目に起きたこと、2 文目以降に次にすることを書き、どの文も句点で終える。
@@ -31,6 +32,7 @@ enum Messages {
     static let unverified = "挿入を確認できませんでした。入っていなければ、\(recover)"
     static let unverifiedNotSent = "挿入を確認できなかったため、送信していません。入っていれば、Return を押してください。入っていなければ、\(recover)"
     static let secureInputAtInsert = "セキュア入力中のため、挿入しません。今の発話は、\(recover)"
+    static let commandNotSent = "アクセシビリティの許可がないため、コマンドのキーを送れません。システム設定を開くので、プライバシーとセキュリティ > アクセシビリティで、Dictate を許可してください。"
     static let accessibilityDenied = "アクセシビリティの許可がないため、挿入できません。システム設定を開くので、プライバシーとセキュリティ > アクセシビリティで、Dictate を許可してください。今の発話は、\(recover)"
 
     // 整形サーバ
@@ -77,6 +79,12 @@ enum Messages {
     static func microphoneFailed(_ detail: String) -> String { "マイクを開けません。\(detail)" }
     static func historyFailed(_ detail: String) -> String { "履歴に書けません。\(detail)" }
     static func openFailed(_ app: String, _ detail: String) -> String { "「\(app)」で設定ファイルを開けませんでした（\(detail)）。config.json の editor を null に戻すと、次に開くときにアプリを選び直せます。" }
+    /// 理由は先頭の 2 行だけ書く。表計算から書き出した 3 列の TSV では全行が当たり、並べきれない
+    static func dictionarySkipped(_ skipped: [YomiDictionary.ParseError]) -> String {
+        let reasons = skipped.prefix(2).map(\.localizedDescription).joined()
+        let more = skipped.count > 2 ? "ほかに \(skipped.count - 2) 行を読めません。" : ""
+        return "\(reasons)\(more)読めない行を飛ばし、残りの行で辞書を作りました。直してから、メニューの「設定と辞書を再読み込み」を選んでください。"
+    }
     static func loadFailed(_ detail: String) -> String { "\(detail)対応してから、メニューの「設定と辞書を再読み込み」を選んでください。" }
     static func configWriteFailed(_ detail: String) -> String { "設定ファイルを書き出せませんでした（\(detail)）。今あるファイルをそのまま開きます。" }
     static let configMissing = "設定ファイルを作れませんでした。~/Library/Application Support/Dictate/ に書けるかを確かめてください。"

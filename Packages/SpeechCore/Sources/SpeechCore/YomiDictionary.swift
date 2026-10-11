@@ -23,7 +23,8 @@ public struct YomiDictionary: Sendable {
         public let replacements: [Replacement]
     }
 
-    public enum ParseError: Error, LocalizedError, Equatable {
+    /// 読めずに読み飛ばした行。行番号を持ち、理由は errorDescription に書く。
+    public enum ParseError: Error, LocalizedError, Equatable, Sendable {
         case malformedLine(number: Int, content: String)
         case emptyKey(number: Int, surface: String)
 
@@ -51,8 +52,10 @@ public struct YomiDictionary: Sendable {
     }
 
     /// `表記<TAB>読み`（読みは省略可）。空行と `#` で始まる行は読み飛ばす。
-    public init(tsv: String) throws {
+    /// 読めない行も読み飛ばし、残りの行で辞書を作る。1 行の誤りで辞書全体を止めない。
+    public static func parse(tsv: String) -> (dictionary: YomiDictionary, skipped: [ParseError]) {
         var entries: [Entry] = []
+        var skipped: [ParseError] = []
         // CRLF は Swift では 1 文字で、"\n" では分かれない。BOM は 1 行目の表記に混ざる
         let lines = tsv.trimmingPrefix("\u{FEFF}").split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
         for (index, line) in lines.enumerated() {
@@ -60,15 +63,17 @@ public struct YomiDictionary: Sendable {
             if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
             let fields = trimmed.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             guard fields.count <= 2, let surface = fields.first, !surface.isEmpty else {
-                throw ParseError.malformedLine(number: index + 1, content: trimmed)
+                skipped.append(.malformedLine(number: index + 1, content: trimmed))
+                continue
             }
             let reading = fields.count == 2 && !fields[1].isEmpty ? fields[1] : nil
             guard !Self.reading(of: reading ?? surface).isEmpty else {
-                throw ParseError.emptyKey(number: index + 1, surface: surface)
+                skipped.append(.emptyKey(number: index + 1, surface: surface))
+                continue
             }
             entries.append(Entry(surface: surface, reading: reading))
         }
-        self.init(entries: entries)
+        return (YomiDictionary(entries: entries), skipped)
     }
 
     public var isEmpty: Bool { surfaces.isEmpty }
@@ -120,8 +125,9 @@ public struct YomiDictionary: Sendable {
     }
 
     private struct Token {
-        let range: NSRange
-        let reading: String
+        /// text を NSString として数えた範囲。
+        public let range: NSRange
+        public let reading: String
     }
 
     private static func tokens(of text: String) -> [Token] {

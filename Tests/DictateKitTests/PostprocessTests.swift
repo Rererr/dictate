@@ -45,6 +45,33 @@ import Testing
         #expect(result.command == nil)
     }
 
+    @Test func 読点なしでも平仮名に続くコマンドは判定する() {
+        let result = postprocess("了解です送信して", dictionary: dictionary)
+        #expect(result.body == "了解です")
+        #expect(result.command == .send)
+    }
+
+    @Test func 来月に開業しては読みが合い平仮名に続くので改行のコマンドにする() {
+        let result = postprocess("来月に開業して", dictionary: dictionary)
+        #expect(result.body == "来月に")
+        #expect(result.command == .newline)
+    }
+
+    // 漢字、カタカナ、英字、数字に直に続く「送信」「開業」は複合語の後半として本文に残す。
+    // 「以上送信して」も送らない（送られない側に倒す。読点で区切れば送る）
+    @Test(arguments: ["メールを再送信して", "資料を転送信して", "メール送信して", "新規開業して", "BCC送信して", "以上送信して"])
+    func 漢字やカタカナや英数字に続くコマンドの語は本文として残す(text: String) {
+        let result = postprocess(text, dictionary: dictionary)
+        #expect(result.body == text)
+        #expect(result.command == nil)
+    }
+
+    @Test func 読点で区切れば複合語になりうる語の後でもコマンドにする() {
+        let result = postprocess("以上、送信して", dictionary: dictionary)
+        #expect(result.body == "以上")
+        #expect(result.command == .send)
+    }
+
     @Test func 送信してだけなら本文は空になる() {
         let result = postprocess("送信して。", dictionary: dictionary)
         #expect(result.body.isEmpty)
