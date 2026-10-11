@@ -5,7 +5,7 @@
   mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
   python3 eval/formatter_bench.py --model mlx-community/Qwen3-4B-4bit
 
-送る文はフィラーを含む 12 文（Slack 風、メール風、介護記録風）。各文を 2 回送り、2 回目（温まった状態）の所要を取る。
+送る文は 12 文（Slack 風、メール風、介護記録風）。各文を 2 回送り、2 回目（温まった状態）の所要を取る。
 12 文のうちフィラーを含むのは 8 文で、「効果」の分母はこの 8 文。
 送るのはフィラーの規則（ADR-14）を通す前の文で、アプリでの LLM の実際の条件（規則の後段）は Tests/DictateKitTests/FormatterSecondStageBench.swift が測る。
 初回はモデルのダウンロードが終わるまで最初の要求が待たされる（既定 600 秒まで待つ）。
