@@ -160,7 +160,7 @@ Whichever way you installed, the Accessibility permission record (`tccutil reset
 3. The top of the menu shows the status of the microphone, Accessibility, and the Japanese recognition model. When something is missing, the menu also offers an item that opens the relevant setting (the model row updates the next time you open the menu after changing the setting). A missing model is also announced at launch.
 4. Put the cursor in a text field, hold ⌃⌥⌘D while speaking, then release.
 
-With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Choose "アクセシビリティの許可を付け直す（オンに見えて効かないとき）" in the menu (it runs `tccutil reset Accessibility com.rererr.dictate` and relaunches the app so that it reappears in the list), or create a self-signed certificate once with `scripts/make-cert.sh` so that rebuilds keep the permission (`scripts/make-cert.sh --delete` removes it). Right after creating the certificate, the permission granted to the ad-hoc build does not carry over, so grant it once more with the menu item above.
+With ad-hoc signing, macOS treats every rebuild as a different app and the Accessibility permission stops working (the toggle still looks on). Choose "アクセシビリティの許可を付け直す（オンに見えて効かないとき）" in the menu (it runs `tccutil reset Accessibility com.rererr.dictate` and relaunches the app so that it reappears in the list), or create a self-signed certificate once with `scripts/make-cert.sh` (named "Dictate Dev"; "Dev" means your own developer key on this Mac, not a development build, since dictate has no distribution signing) so that rebuilds keep the permission (`scripts/make-cert.sh --delete` removes it). Right after creating the certificate, the permission granted to the ad-hoc build does not carry over, so grant it once more with the menu item above.
 
 The certificate has a trade-off. Its key is imported so that `codesign` can use it without confirmation, so any program running as your user can sign something with this certificate and Dictate's bundle ID, and that program inherits Dictate's Accessibility permission. Ad-hoc signing has no such path. If you installed with Homebrew, the build runs in Homebrew's sandbox, cannot reach the keychain, and stays ad-hoc signed even if the certificate exists.
 
@@ -194,6 +194,7 @@ Finally, tell me the default hotkey, where the settings files live, and how to u
 
 証明書を作っておくと、組み直しても許可が保たれる。
 この Mac の中だけで有効な、コード署名用の自己署名証明書で、次の 1 行で作れる。
+名前の「Dev」は開発版という意味ではなく、この Mac の開発者（自分）の鍵という意味である。dictate には配布用の署名が無く、公開版でも各自がこの鍵かアドホックで署名する。
 
 ```sh
 scripts/make-cert.sh           # 作る。次の scripts/bundle.sh からこれで署名する
