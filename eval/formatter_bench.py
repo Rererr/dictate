@@ -6,10 +6,9 @@
   python3 eval/formatter_bench.py --model mlx-community/Qwen3-4B-4bit
 
 送る文は 12 文（Slack 風、メール風、介護記録風）。各文を 2 回送り、2 回目（温まった状態）の所要を取る。
-12 文のうちフィラーを含むのは 8 文で、「効果」の分母はこの 8 文。
-送るのはフィラーの規則（ADR-14）を通す前の文で、アプリでの LLM の実際の条件（規則の後段）は Tests/DictateKitTests/FormatterSecondStageBench.swift が測る。
 初回はモデルのダウンロードが終わるまで最初の要求が待たされる（既定 600 秒まで待つ）。
-採用の判定はアプリの検証（フィラーの削除と句読点の変更だけ）の近似で、句読点と空白とフィラーを除いた文字列が入力と一致すれば採用とする。
+採用の判定はアプリの検証と同じで、句読点と空白を除いた文字列が入力と一致すれば採用とする（フィラーの削除も棄却になる）。
+文頭のフィラーは、アプリでは規則が先に消すので、送る前に規則と同じ語彙で落とす。
 数値はアプリと同じく印に置き換えて送る。
 """
 import argparse, json, re, statistics, time, urllib.request
@@ -33,8 +32,7 @@ PUNCT = "、。，．！？ 　\n\t"
 # アプリ本体の組み込みプロンプト（Sources/DictateKit/Formatting.swift の defaultSystemPrompt）と同じ文
 SYSTEM = (
     "あなたは音声入力の整形担当です。入力は音声認識の生テキストです。"
-    "フィラー（えっと、えー、あのー、あの、その、まあ、なんか）を取り除き、句読点を整えます。"
-    "それ以外の語は一字も変えません。<N1> のような印はそのまま残します。出力は本文だけ。"
+    "句読点と空白を整えます。語は一字も変えず、消しません。<N1> のような印はそのまま残します。出力は本文だけ。"
 )
 
 def mask(text):
@@ -45,9 +43,13 @@ def mask(text):
     return re.sub(r"[0-9０-９]+(?:[.,:/\-．，：／][0-9０-９]+)*", repl, text), originals
 
 def normalize(text):
-    text = "".join(ch for ch in text if ch not in PUNCT)
+    return "".join(ch for ch in text if ch not in PUNCT)
+
+def strip_leading_filler(text):
+    """台本のフィラーは文頭に読点つきで置いてある。アプリの規則（ADR-14）が消す形だけを落とす。"""
     for filler in sorted(FILLERS, key=len, reverse=True):
-        text = text.replace(filler, "")
+        if text.startswith(filler + "、"):
+            return text[len(filler) + 1:]
     return text
 
 def ask(endpoint, model, text, timeout):
@@ -62,11 +64,6 @@ def ask(endpoint, model, text, timeout):
         content = json.load(res)["choices"][0]["message"]["content"]
     return content.strip(), time.perf_counter() - started
 
-def has_filler(text):
-    """文頭のフィラー（台本のフィラーは全て文頭に置いてある）が残っているか。"""
-    head = text.lstrip(PUNCT)
-    return any(head.startswith(f) for f in FILLERS)
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
@@ -75,9 +72,9 @@ def main():
     parser.add_argument("--timeout", type=float, default=600)
     args = parser.parse_args()
     ask(args.endpoint, args.model, "えっと、準備です", args.timeout)  # 温め
-    seconds, adopted, effective, with_filler, rejected, untouched = [], 0, 0, 0, [], []
+    seconds, adopted, rejected = [], 0, []
     for sentence in SENTENCES:
-        masked, _ = mask(sentence)
+        masked, _ = mask(strip_leading_filler(sentence))
         ask(args.endpoint, args.model, masked, args.timeout)  # 1 回目は捨てる（キャッシュの影響を揃える）
         output, elapsed = ask(args.endpoint, args.model, masked, args.timeout)
         seconds.append(elapsed)
@@ -86,24 +83,11 @@ def main():
             adopted += 1
         else:
             rejected.append((masked, output))
-        if has_filler(masked):
-            with_filler += 1
-            if ok and not has_filler(output):
-                effective += 1
-                label = "効果"
-            elif ok:
-                untouched.append(output)
-                label = "採用（フィラー残り）"
-            else:
-                label = "棄却"
-        else:
-            label = "採用" if ok else "棄却"
-        print(f"{elapsed:5.2f}s  {label}  {output}")
+        print(f"{elapsed:5.2f}s  {'採用' if ok else '棄却'}  {output}")
     print()
     print(f"model: {args.model}")
     print(f"所要: 中央値 {statistics.median(seconds):.2f} 秒、最大 {max(seconds):.2f} 秒、最小 {min(seconds):.2f} 秒（{len(seconds)} 文、温まった状態）")
-    print(f"採用: {adopted}/{len(SENTENCES)}（検証の近似。フィラーと句読点以外の変更があれば棄却）")
-    print(f"効果: {effective}/{with_filler}（フィラーのある文のうち、採用され、かつフィラーが消えたもの。採用でもフィラーを残したものは {len(untouched)}）")
+    print(f"採用: {adopted}/{len(SENTENCES)}（検証と同じ判定。句読点と空白以外の変更があれば棄却）")
     for masked, output in rejected:
         print(f"  棄却: {masked}\n     → {output}")
 

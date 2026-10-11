@@ -50,11 +50,10 @@ import Testing
         #expect(warm, "モデルの読み込みが終わり、整形の要求が通る")
 
         // 整形: 本物のモデルで、検証を通るか棄却されるかのどちらか（届かないことは無い）
-        let result = await formatVerified("えっと、本番デプロイは15時からでいいですか", using: client.format)
+        let result = await formatVerified("本番デプロイは15時からでいいですか", using: client.format)
         #expect(result.status == .adopted || result.status == .rejected, "出力: \(result.output ?? "nil") 詳細: \(result.detail ?? "")")
         if result.status == .adopted {
             #expect(result.output?.contains("15時") == true, "数値は印から元に戻る")
-            #expect(result.output?.contains("えっと") == false, "フィラーが消える")
         }
         #expect(result.seconds < 10, "温まった状態の所要（\(result.seconds) 秒）")
 

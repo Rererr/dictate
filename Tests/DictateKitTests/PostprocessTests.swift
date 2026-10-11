@@ -105,13 +105,12 @@ import Testing
 
 @Suite struct 整形の差分検証 {
     @Test(arguments: [
-        ("えっと、本番デプロイは<N1>時からでいいですか", "本番デプロイは<N1>時からでいいですか。"),
-        ("えー見積書を添付いたしましたのでご確認をお願いいたします", "見積書を添付いたしましたので、ご確認をお願いいたします。"),
-        ("あの、キューが詰まっているみたいです", "キューが詰まっているみたいです。"),
+        ("本番デプロイは<N1>時からでいいですか", "本番デプロイは<N1>時からでいいですか。"),
+        ("見積書を添付いたしましたのでご確認をお願いいたします", "見積書を添付いたしましたので、ご確認をお願いいたします。"),
         ("栄養は <N1>時に実施", "栄養は<N1>時に実施。"),
         ("変更なし。", "変更なし。"),
     ])
-    func 句読点と空白の変更とフィラーの削除は通す(input: String, output: String) {
+    func 句読点と空白の変更は通す(input: String, output: String) {
         #expect(FormatVerifier.accepts(input: input, output: output))
     }
 
@@ -127,31 +126,21 @@ import Testing
         #expect(!FormatVerifier.accepts(input: input, output: output))
     }
 
-    @Test(arguments: ["えーと、明日行きます", "えーっと、明日行きます", "ええと、明日行きます"])
-    func えーとの表記ゆれもフィラーとして削除を認める(input: String) {
-        #expect(FormatVerifier.accepts(input: input, output: "明日行きます。"))
-    }
-
-    @Test(arguments: [("えーと、明日行きます", "と、明日行きます。"), ("あのー、明日行きます", "ー、明日行きます。")])
-    func フィラーの一部だけを削った出力は通さない(input: String, output: String) {
+    // フィラーは規則が消す（ADR-14）。「フィラーを消す」を切った発話で LLM が消した出力は、設定どおりに捨てる
+    @Test(arguments: [
+        ("えっと、本番デプロイは<N1>時からでいいですか", "本番デプロイは<N1>時からでいいですか。"),
+        ("その、件です", "件です。"),
+        ("えーと、明日行きます", "明日行きます。"),
+    ])
+    func フィラーの削除も通さない(input: String, output: String) {
         #expect(!FormatVerifier.accepts(input: input, output: output))
-    }
-
-    @Test func 直前の仮名の長音になる語の削除は認めない() {
-        #expect(!FormatVerifier.accepts(input: "へえー、そうなんだ", output: "へ、そうなんだ。"))
-        #expect(FormatVerifier.accepts(input: "本番はえっと<N1>時から", output: "本番は<N1>時から。"))
-    }
-
-    @Test func 読点が続かないあのとそのは削除を認めない() {
-        #expect(!FormatVerifier.accepts(input: "あの件です", output: "件です"))
-        #expect(FormatVerifier.accepts(input: "その、件です", output: "件です"))
     }
 }
 
 @Suite struct 整形の一連 {
     @Test func 検証を通った出力は数値を戻して採用する() async {
-        let result = await formatVerified("えっと、PRは3113です") { masked in
-            #expect(masked == "えっと、PRは<N1>です")
+        let result = await formatVerified("PRは3113です") { masked in
+            #expect(masked == "PRは<N1>です")
             return "PRは<N1>です。"
         }
         #expect(result.status == .adopted)
@@ -176,7 +165,7 @@ import Testing
     }
 
     @Test func 数値の間に語があれば句読点の変更は通す() async {
-        let result = await formatVerified("えっと、14時から30分です") { _ in "<N1>時から、<N2>分です。" }
+        let result = await formatVerified("14時から30分です") { _ in "<N1>時から、<N2>分です。" }
         #expect(result.output == "14時から、30分です。")
     }
 

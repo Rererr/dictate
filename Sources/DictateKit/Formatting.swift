@@ -59,55 +59,13 @@ public struct NumberMask: Sendable, Equatable {
 
 /// 整形の出力が「句読点と空白の変更」と「フィラーの削除」だけでできているかを確かめる。
 /// 禁止文では LLM の補完と脱落を止められないので、出力の側を構造で縛る。
+/// 入力と出力の差分が句読点と空白の変更だけであることを確かめる（ADR-6）。
+/// フィラーの削除は認めない。フィラーは規則が消し、LLM の役割は句読点と空白に限る（ADR-14）。
 public enum FormatVerifier {
     static let punctuation: Set<Character> = ["、", "。", "，", "．", "！", "？", " ", "　", "\n", "\r", "\r\n", "\t"]
-    static let fillers = FillerRules.unambiguous
-    /// 連体詞や副詞としても使う語。生テキストで直後に読点があるときだけフィラーとみなす。
-    static let fillersBeforeComma = FillerRules.ambiguous
 
     public static func accepts(input: String, output: String) -> Bool {
-        let source = Array(input)
-        // 句読点と空白を除いた文字と、その生テキスト上の位置
-        let kept = source.indices.filter { !punctuation.contains(source[$0]) }
-        let target = output.filter { !punctuation.contains($0) }.map { $0 }
-        var memo: [[Bool?]] = Array(repeating: Array(repeating: nil, count: target.count + 1), count: kept.count + 1)
-
-        func deletableLength(at i: Int, _ filler: String, requiresComma: Bool) -> Int? {
-            let characters = Array(filler)
-            guard i + characters.count <= kept.count else { return nil }
-            for (offset, character) in characters.enumerated() {
-                let position = kept[i + offset]
-                // フィラーは生テキスト上で連続していること（句読点をまたがない）
-                if source[position] != character || position != kept[i] + offset { return nil }
-            }
-            // 直前の仮名の長音（「へえー」）は規則と同じく消させない
-            if !FillerRules.canStart(filler, after: kept[i] > 0 ? source[kept[i] - 1] : nil) { return nil }
-            if requiresComma {
-                let next = kept[i] + characters.count
-                guard next < source.count, source[next] == "、" || source[next] == "，" else { return nil }
-            }
-            return characters.count
-        }
-
-        func matches(_ i: Int, _ j: Int) -> Bool {
-            if let known = memo[i][j] { return known }
-            var result = false
-            if i == kept.count {
-                result = j == target.count
-            } else {
-                if j < target.count, source[kept[i]] == target[j] { result = matches(i + 1, j + 1) }
-                if !result {
-                    // 同じ位置で当たるフィラーは最も長いものだけを認める。
-                    // 短い方も認めると「えーと」の「えー」だけを削って「と」を残す出力が通る
-                    let candidates = fillers.map { ($0, false) } + fillersBeforeComma.map { ($0, true) }
-                    let longest = candidates.compactMap { deletableLength(at: i, $0.0, requiresComma: $0.1) }.max()
-                    if let longest { result = matches(i + longest, j) }
-                }
-            }
-            memo[i][j] = result
-            return result
-        }
-        return matches(0, 0)
+        input.filter { !punctuation.contains($0) } == output.filter { !punctuation.contains($0) }
     }
 }
 
@@ -201,8 +159,7 @@ public struct LLMClient: Sendable {
 
     public static let defaultSystemPrompt = """
         あなたは音声入力の整形担当です。入力は音声認識の生テキストです。\
-        フィラー（えっと、えー、あのー、あの、その、まあ、なんか）を取り除き、句読点を整えます。\
-        それ以外の語は一字も変えません。<N1> のような印はそのまま残します。出力は本文だけ。
+        句読点と空白を整えます。語は一字も変えず、消しません。<N1> のような印はそのまま残します。出力は本文だけ。
         """
 
     private struct Request: Encodable {
