@@ -59,7 +59,7 @@ import Testing
 
     // 漢字、カタカナ、英字、数字に直に続く「送信」「開業」は複合語の後半として本文に残す。
     // 「以上送信して」も送らない（送られない側に倒す。読点で区切れば送る）
-    @Test(arguments: ["メールを再送信して", "資料を転送信して", "メール送信して", "新規開業して", "BCC送信して", "以上送信して"])
+    @Test(arguments: ["メールを再送信して", "資料を転送信して", "メール送信して", "新規開業して", "BCC送信して", "以上送信して", "ありがとー送信して"])
     func 漢字やカタカナや英数字に続くコマンドの語は本文として残す(text: String) {
         let result = postprocess(text, dictionary: dictionary)
         #expect(result.body == text)
@@ -70,6 +70,13 @@ import Testing
         let result = postprocess("以上、送信して", dictionary: dictionary)
         #expect(result.body == "以上")
         #expect(result.command == .send)
+    }
+
+    @Test(arguments: ["えっと。", "えー。あのー。", "えっと、"])
+    func フィラーを消して句読点だけが残る発話は本文を空にする(text: String) {
+        let result = postprocess(text, dictionary: dictionary)
+        #expect(result.body == "")
+        #expect(result.command == nil)
     }
 
     @Test func 送信してだけなら本文は空になる() {
@@ -169,8 +176,8 @@ import Testing
         #expect(result.output == "14時から、30分です。")
     }
 
-    @Test(arguments: [("えっと", ""), ("えー、あのー", "。")])
-    func フィラーだけの発話を空にした出力は採用しない(input: String, output: String) async {
+    @Test(arguments: [("。", ""), ("、 ", "。")])
+    func 句読点だけの入力を空にした出力は採用しない(input: String, output: String) async {
         let result = await formatVerified(input) { _ in output }
         #expect(result.status == .rejected)
     }

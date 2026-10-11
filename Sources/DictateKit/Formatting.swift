@@ -57,7 +57,6 @@ public struct NumberMask: Sendable, Equatable {
     }
 }
 
-/// 整形の出力が「句読点と空白の変更」と「フィラーの削除」だけでできているかを確かめる。
 /// 禁止文では LLM の補完と脱落を止められないので、出力の側を構造で縛る。
 /// 入力と出力の差分が句読点と空白の変更だけであることを確かめる（ADR-6）。
 /// フィラーの削除は認めない。フィラーは規則が消し、LLM の役割は句読点と空白に限る（ADR-14）。
@@ -104,7 +103,7 @@ public func formatVerified(_ text: String, using llm: @Sendable (String) async t
     }
     guard FormatVerifier.accepts(input: mask.masked, output: output), mask.keepsSeparators(in: output),
           let restored = mask.unmask(output),
-          // フィラーだけの発話を空にした出力は採用しない（挿入するものが無くなる）
+          // 句読点と空白だけの入力を空にした出力は採用しない（挿入するものが無くなる）
           restored.contains(where: { !FormatVerifier.punctuation.contains($0) })
     else {
         return FormatResult(status: .rejected, output: output, detail: nil, seconds: elapsed())

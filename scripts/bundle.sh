@@ -7,7 +7,7 @@
 #   --no-build は、直前の swift build -c release の結果からバンドルだけ作る（Homebrew の formula が使う）。
 set -euo pipefail
 cd "${0:A:h}/.."
-version=0.1.0
+version=0.2.0
 build=1
 if [[ "${1:-}" == --no-build ]]; then
     build=0

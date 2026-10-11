@@ -23,7 +23,9 @@ public struct Postprocessed: Sendable, Equatable {
 public func postprocess(_ recognized: String, dictionary: YomiDictionary, removeFillers: Bool = true) -> Postprocessed {
     let replaced = dictionary.apply(recognized.trimmingCharacters(in: .whitespacesAndNewlines))
     let (withFillers, command) = splitTrailingCommand(replaced.text)
-    let body = removeFillers ? FillerRules.remove(from: withFillers) : withFillers
+    var body = removeFillers ? FillerRules.remove(from: withFillers) : withFillers
+    // 「えっと。」のように、フィラーを消すと句読点だけが残る発話は、何も言っていない発話として扱う
+    if body.allSatisfy({ FormatVerifier.punctuation.contains($0) || $0 == "," || $0 == "." }) { body = "" }
     return Postprocessed(
         afterDictionary: replaced.text, replacements: replaced.replacements, body: body, command: command,
         removedFillerCharacters: removeFillers ? withFillers.count - body.count : 0
@@ -34,11 +36,11 @@ public func postprocess(_ recognized: String, dictionary: YomiDictionary, remove
 /// 小型 LLM も語彙ルールに及ばなかった（2026-10-10 の計測。ADR-14）。
 public enum FillerRules {
     /// 文脈に別の意味が無く、どこにあっても消せる語。長い語から照合する。
-    public static let unambiguous = ["えーっと", "えっと", "えーと", "ええと", "あのー", "えー"]
+    static let unambiguous = ["えーっと", "えっと", "えーと", "ええと", "あのー", "えー"]
     /// 連体詞や副詞としても使う語（「あの人」「その件」「まあまあ」「なんか変だ」）。
     /// 文頭か句読点の直後にあり、かつ直後に読点があるときだけフィラーとみなす。
     /// 履歴 146 発話と台本 32 文で、この条件なら誤削除 0、取りこぼし 1（「あのララベルの」読点なし）。
-    public static let ambiguous = ["なんか", "あの", "その", "まあ"]
+    static let ambiguous = ["なんか", "あの", "その", "まあ"]
 
     private static let comma: Set<Character> = ["、", "，", ","]
     private static let boundary: Set<Character> = ["、", "，", ",", "。", "．", ".", "！", "!", "？", "?", "\n"]
@@ -52,7 +54,7 @@ public enum FillerRules {
     /// 直前の文字が、語の先頭の母音を伸ばした形になるなら、そこから始まる語はフィラーとして消さない。
     /// 2 文字の「えー」は語の末尾の「え」とも重なる（「いいえー」）ので、直前が仮名なら消さない。
     /// 「それでえーと明日」のように読点の無い連続は残ることになるが、本文の一部を削るよりは残す側に倒す。
-    public static func canStart(_ word: String, after previous: Character?) -> Bool {
+    static func canStart(_ word: String, after previous: Character?) -> Bool {
         guard let previous, let first = word.first else { return true }
         switch first {
         case "え": return !eRow.contains(previous) && !(word == "えー" && isKana(previous))
@@ -143,7 +145,7 @@ func splitTrailingCommand(_ text: String) -> (body: String, command: VoiceComman
     return (text, nil)
 }
 
-/// 漢字（々を含む）、カタカナ（長音を含む）、英字、数字。平仮名と句読点の後はコマンドになる。
+/// 漢字（々を含む）、カタカナ（長音と中黒を含む）、英字、数字。平仮名と句読点の後はコマンドになる（長音は平仮名の後でも含む）。
 private func isCompoundScalar(_ scalar: Unicode.Scalar) -> Bool {
     switch scalar.value {
     case 0x3005, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x30A1...0x30FF, 0xFF66...0xFF9F,

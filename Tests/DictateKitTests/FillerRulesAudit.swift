@@ -3,7 +3,7 @@ import SpeechCore
 import Testing
 @testable import DictateKit
 
-/// 現在のフィラー規則（ADR-14）を履歴と台本にかけ、消えた区間だけを前後 4 文字つきで列挙する（一時的な監査。本文は出さない）。
+/// 現在のフィラー規則（ADR-14）を履歴と台本にかけ、消えた区間だけを前後 4 文字つきで列挙する（規則を変えたときの再計測用。本文は出さない）。
 @Suite struct フィラー規則の監査 {
     static let optedIn = ProcessInfo.processInfo.environment["DICTATE_FILLER_AUDIT"] == "1"
     struct Row: Decodable { let type: String; let afterDictionary: String? }
@@ -27,18 +27,19 @@ import Testing
         "了解です午後に対応します", "えーっと、朝食は主食が全量副食が半分で水分は 150",
     ]
 
-    /// 消えた区間を、元の文での前後 4 文字と一緒に返す。
+    /// 消えた区間を、元の文での前後 4 文字と一緒に返す。規則は削除しかしないので、両端から揃えて区間ごとに切る。
     static func removedSpans(_ text: String) -> [String] {
-        let after = FillerRules.remove(from: text)
-        guard after != text else { return [] }
-        let a = Array(text), b = Array(after)
-        var i = 0
-        while i < min(a.count, b.count), a[i] == b[i] { i += 1 }
-        var j = 0
-        while j < min(a.count, b.count) - i, a[a.count - 1 - j] == b[b.count - 1 - j] { j += 1 }
-        let removed = String(a[i..<(a.count - j)])
-        let before = String(a[max(0, i - 4)..<i]), afterText = String(a[(a.count - j)..<min(a.count, a.count - j + 4)])
-        return ["\(before)【\(removed)】\(afterText)"]
+        let a = Array(text), b = Array(FillerRules.remove(from: text))
+        var spans: [String] = []
+        var i = 0, j = 0
+        while i < a.count {
+            if j < b.count, a[i] == b[j] { i += 1; j += 1; continue }
+            let start = i
+            while i < a.count, !(j < b.count && a[i] == b[j] && a[i...].starts(with: b[j...].prefix(4))) { i += 1 }
+            let before = String(a[max(0, start - 4)..<start]), after = String(a[i..<min(a.count, i + 4)])
+            spans.append("\(before)【\(String(a[start..<i]))】\(after)")
+        }
+        return spans
     }
 
     @Test(.enabled(if: optedIn, "DICTATE_FILLER_AUDIT=1 のときだけ走る"))

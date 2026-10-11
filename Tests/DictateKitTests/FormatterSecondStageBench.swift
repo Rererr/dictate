@@ -29,7 +29,7 @@ import Testing
     static func fillerTokens(in text: String) -> Int {
         var rest = text
         var count = 0
-        for word in FillerRules.unambiguous.sorted { $0.count > $1.count } + FillerRules.ambiguous.map { $0 + "、" } {
+        for word in FillerRules.unambiguous.sorted(by: { $0.count > $1.count }) + FillerRules.ambiguous.map({ $0 + "、" }) {
             let parts = rest.components(separatedBy: word)
             count += parts.count - 1
             rest = parts.joined(separator: " ")
@@ -80,7 +80,7 @@ import Testing
         let max = sorted.last ?? 0
         return """
         \(label): 採用 \(s.adopted)/\(total)、棄却 \(s.rejected)、接続不可 \(s.unreachable)
-          語彙の出現: 送る前 \(s.fillersBefore) → 採用後 \(s.fillersAfter)（採用で消えた \(s.fillersRemovedInAdopted)）
+          語彙の出現: 送る前 \(s.fillersBefore) → 採用後 \(s.fillersAfter)（採用で消えた \(s.fillersRemovedInAdopted)。検証が認めないので 0 のはず）
           採用のうち本文が変わった \(s.changedInAdopted)（句読点と空白だけ \(s.punctuationOnlyInAdopted)）
           所要: 中央値 \(String(format: "%.2f", median)) 秒、最大 \(String(format: "%.2f", max)) 秒
         """
