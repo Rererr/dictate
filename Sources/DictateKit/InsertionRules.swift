@@ -25,8 +25,15 @@ public enum InsertionRules {
     /// 本文が入った、または入ったと確かめられたか。
     /// 入っていない欄に Return だけが届くと、元からあった下書きが送信される。
     public static func confirmed(_ insertion: UtteranceRecord.Insertion) -> Bool {
-        insertion.method == .paste || (insertion.method == .ax && insertion.reason == nil)
+        switch insertion.method {
+        case .paste: insertion.pasteConfirmed != false
+        case .ax: insertion.reason == nil
+        case .none: false
+        }
     }
+
+    /// 貼り付けの後に入力欄が変わらなかったときの知らせ。
+    public static let pasteUnverified = "貼り付けの後も入力欄が変わりませんでした。"
 
     /// コマンドのキーを送るか。本文なしのコマンドは、キーを送る権限（アクセシビリティ）だけで決まる。
     public static func sends(command: VoiceCommand?, text: String, insertion: UtteranceRecord.Insertion, accessibilityTrusted: Bool) -> Bool {
@@ -46,6 +53,8 @@ public enum InsertionRules {
             return sends ? .silent : .commandNotSent
         case (.ax, let reason?):
             return .unverified(reason: reason, sendSkipped: command == .send)
+        case (.paste, _) where insertion.pasteConfirmed == false:
+            return .unverified(reason: pasteUnverified, sendSkipped: command == .send)
         case (.ax, nil), (.paste, _):
             return formatSkipped.map(InsertionOutcome.formatSkipped) ?? .silent
         }

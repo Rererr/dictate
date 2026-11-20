@@ -107,6 +107,14 @@ import Testing
         #expect(unverified.outcome == .unverified(reason: "確認できない", sendSkipped: true))
         let ax = await run("了解です", insertion: { _ in .init(method: .ax, reason: nil) }) { _ in "了解です。" }
         #expect(ax.outcome == .silent)
+        // 貼り付けの後に入力欄が変わらなかったときも、入ったと確かめられないので送信を見送る（§5）
+        let pasteUnverified = await run("了解です、送信して", insertion: { _ in .init(method: .paste, reason: "貼り付け", pasteConfirmed: false) }) { _ in "了解です。" }
+        #expect(pasteUnverified.sends == false)
+        #expect(pasteUnverified.outcome == .unverified(reason: InsertionRules.pasteUnverified, sendSkipped: true))
+        let pasteConfirmed = await run("了解です、送信して", insertion: { _ in .init(method: .paste, reason: "貼り付け", pasteConfirmed: true) }) { _ in "了解です。" }
+        #expect(pasteConfirmed.sends)
+        let pasteUnread = await run("了解です、送信して", insertion: { _ in .init(method: .paste, reason: "貼り付け") }) { _ in "了解です。" }
+        #expect(pasteUnread.sends, "入力欄を読めないアプリでは、これまでどおり入ったものとして扱う")
     }
 
     @Test func 規則が残した曖昧語をLLMが消した出力は棄却する() async {

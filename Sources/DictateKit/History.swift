@@ -28,10 +28,17 @@ public struct UtteranceRecord: Sendable, Codable, Equatable {
     public struct Insertion: Sendable, Codable, Equatable {
         public let method: InsertionMethod
         public let reason: String?
+        /// 貼り付けの後に入力欄が変わったか（paste のみ）。nil は読めなかった、または貼り付けでない。
+        /// false なら入ったと確かめられず、Return は送らない（§5）。
+        public let pasteConfirmed: Bool?
+        /// 確認にかかった時間や、届かなかった回の手がかり。人が読むためのもので、判定には使わない。
+        public let detail: String?
 
-        public init(method: InsertionMethod, reason: String?) {
+        public init(method: InsertionMethod, reason: String?, pasteConfirmed: Bool? = nil, detail: String? = nil) {
             self.method = method
             self.reason = reason
+            self.pasteConfirmed = pasteConfirmed
+            self.detail = detail
         }
     }
 

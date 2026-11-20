@@ -895,14 +895,22 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let app = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         var insertion = UtteranceRecord.Insertion(method: .none, reason: nil)
-        var cleanup: Task<Void, Never>?
+        var cleanup: Task<(confirmed: Bool?, seconds: Double, detail: String?), Never>?
         if !text.isEmpty {
             let result = await inserter.insert(text, forcePaste: app.map(config.alwaysPasteBundleIds.contains) ?? false)
             insertion = result.insertion
             cleanup = result.cleanup
         }
         let inserted = clock.now
-        await cleanup?.value
+        if let check = await cleanup?.value {
+            // 貼り付けの後に入力欄が変わったかと、確認にかかった時間を履歴に残す（Chrome で数回に一度入らない事象の切り分け）
+            let detail = switch check.confirmed {
+            case true?: "貼り付けを \(Int(check.seconds * 1000)) ms で確認"
+            case false?: "貼り付け後も入力欄が変わらない（\(String(format: "%.1f", check.seconds)) 秒）"
+            case nil: "入力欄を読めず貼り付けを確認していない"
+            }
+            insertion = .init(method: insertion.method, reason: insertion.reason, pasteConfirmed: check.confirmed, detail: [detail, check.detail].compactMap { $0 }.joined(separator: "。"))
+        }
 
         let command = InsertionRules.command(spoken: post.command, newlineAfterUtterance: config.newlineAfterUtterance, text: text)
         let sends = InsertionRules.sends(command: command, text: text, insertion: insertion, accessibilityTrusted: AXIsProcessTrusted())
