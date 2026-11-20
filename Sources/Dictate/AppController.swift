@@ -336,6 +336,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard !Task.isCancelled else { return }
                 formatterWarm = true
                 formatterWarmingSince = nil
+                // 最初から接続できて添える機会が無かったときも、後で起動し直した「接続できました」には添えない
+                formatterMigrationNoticePending = false
                 if announce || waited { overlay.showToast(Messages.formatterReady) }
                 // 温まった状態で 1 文にかかる時間を測る。予算に入らない Mac では、発話のたびに時間切れを見せる前に知らせる
                 let started = ContinuousClock.now

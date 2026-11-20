@@ -115,6 +115,8 @@ import Testing
         let before = try contents()
         // 場所は書けるまま、config.json だけを置き換えられなくする（印は書ける状態で、印を付けないことを見る）
         try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: url.path)
+        // 途中で抜けても外す（残すと後始末の削除が黙って失敗し、一時の場所に消しにくいファイルが残る）
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: url.path) }
         #expect(throws: (any Error).self) { try FormatterModelMigration.run(config: url) }
         try FileManager.default.setAttributes([.immutable: false], ofItemAtPath: url.path)
         #expect(try contents() == before)
