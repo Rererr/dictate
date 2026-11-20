@@ -22,6 +22,7 @@ if [[ "${1:-}" == --uninstall ]]; then
     print "消しました: $app"
     print "設定と履歴は残しています: ~/Library/Application Support/Dictate/"
     print "許可の記録も消すなら: tccutil reset Accessibility com.rererr.dictate"
+    print "以前の版が UserDefaults に残した記録（「8B に上げられる」を知らせたか）も消すなら: defaults delete com.rererr.dictate"
     exit 0
 fi
 
