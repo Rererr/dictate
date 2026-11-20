@@ -312,8 +312,8 @@ import Testing
 
     @Test func 整形の既定は4Bで起動コマンドはモデルから組む() throws {
         let config = try Config.load(from: write("{}"))
-        #expect(config.formatter.model == "mlx-community/Qwen3-4B-4bit")
-        #expect(config.formatter.startCommand == "mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'")
+        #expect(config.formatter.model == "mlx-community/Qwen3.5-4B-MLX-4bit")
+        #expect(config.formatter.startCommand == "mlx_lm.server --model mlx-community/Qwen3.5-4B-MLX-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'")
         #expect(config.formatter.usesDefaultServer)
         var custom = config
         custom.formatter.startCommand = "my_server --port 8124"

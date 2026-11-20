@@ -2,8 +2,8 @@
 """整形サーバの所要と採用率を、モデルごとに測る。
 
 使い方:
-  mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
-  python3 eval/formatter_bench.py --model mlx-community/Qwen3-4B-4bit
+  mlx_lm.server --model mlx-community/Qwen3.5-4B-MLX-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
+  python3 eval/formatter_bench.py --model mlx-community/Qwen3.5-4B-MLX-4bit
   オンラインの API（ADR-16）: python3 eval/formatter_bench.py --endpoint https://api.anthropic.com/v1 --model claude-haiku-5-5 \
       --api-key "$ANTHROPIC_API_KEY" --temperature null --thinking null
   （--temperature null と --thinking null は、アプリの temperature と enableThinking を null にした条件と同じ）

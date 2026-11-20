@@ -269,7 +269,7 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
 
 - 状態: ホットキー、マイク、アクセシビリティ、日本語の認識モデル、整形（有効なら接続の状態と所要）、履歴、辞書
 - 足りないものがあるときだけ: 「マイクの許可を求める」または「マイクの設定を開く」、「アクセシビリティの設定を開く」と「アクセシビリティの許可を付け直す（オンに見えて効かないとき）」、「音声入力の設定を開く（日本語を追加）」
-- 切り替え: 「発話の後に改行する」「フィラーを消す（えっと、あのー 等）」「LLM で整える（句読点）」。モデルと起動コマンドが既定の組で、整形の計測で余裕があれば「整形モデルを 8B に上げる（約 4.3 GB のダウンロード）」、8B が予算に入らなければ「整形モデルを 4B に替える（約 2.5 GB のダウンロード）」
+- 切り替え: 「発話の後に改行する」「フィラーを消す（えっと、あのー 等）」「LLM で整える（句読点）」。モデルと起動コマンドが既定の組で、整形の計測で余裕があれば「整形モデルを 8B に上げる（約 4.3 GB のダウンロード）」、8B が予算に入らなければ「整形モデルを 4B に替える（約 3 GB のダウンロード）」
 - 整形が有効で、接続先がこの Mac で、接続できないときだけ: `startCommand` があれば「整形サーバを起動」（起動中は出ない。動作中のはずなら「整形サーバを起動し直す（動作中だが応答がない）」）、ログがあれば「整形サーバのログを開く」、「ローカル LLM の手引きを開く」
 - 「ログイン時に起動」（OS のログイン項目に登録する。状態は OS が持ち、`config.json` には書かない。OS が許可を待つ間は「ログイン時に起動（システム設定での許可待ち。選ぶと設定を開く）」と「ログイン時の起動をやめる」になる）
 - 「ホットキーを登録…」「設定ファイルを開く…」（`editor` を決めた後は「設定ファイルを開く」）「設定と辞書を再読み込み」「直前の発話をコピー」「直前の発話を直して辞書に足す…」「終了」
@@ -295,14 +295,14 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
   "formatter": {
     "enabled": false,
     "endpoint": "http://127.0.0.1:8124/v1",
-    "model": "mlx-community/Qwen3-4B-4bit",
+    "model": "mlx-community/Qwen3.5-4B-MLX-4bit",
     "budgetSeconds": 1.0,
     "temperature": 0,
     "maxTokens": 512,
     "enableThinking": false,
     "systemPrompt": null,
     "apiKey": null,
-    "startCommand": "mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
+    "startCommand": "mlx_lm.server --model mlx-community/Qwen3.5-4B-MLX-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
   },
   "history": { "enabled": true, "maxMegabytes": 20 },
   "alwaysPasteBundleIds": [],
@@ -332,8 +332,8 @@ LLM 整形は、規則でフィラーを消した後の文の句読点と空白�
 接続先はオンラインの OpenAI 互換 API（Claude 等）にもできる。`endpoint` をこの Mac 以外にし、`apiKey` に鍵を書く（`Authorization: Bearer` で送る。`config.json` はアプリが書くときに本人だけが読める権限にする）。Claude では `temperature` と `enableThinking` を `null`（送らない）にする。本文（数値は印に置き換えたもの）がそのホストに送られるので、オンにしたときにトーストで知らせ、メニューの「整形」の行に送信先を出す。この Mac 以外の接続先では `startCommand` と GPU メモリの判定は使わず、8B と 4B の切り替えも出ない。手順と Claude の例は [docs/local-llm.md](docs/local-llm.md) の「オンラインの API を使う」にある。
 
 ```sh
-# startCommand の既定値（手で立てるときも同じ）。モデルは 4B が既定で、余裕のある Mac にはメニューで 8B への切り替えを出す
-mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
+# startCommand の既定値（手で立てるときも同じ）。モデルは Qwen3.5-4B が既定で、余裕のある Mac にはメニューで 8B への切り替えを出す
+mlx_lm.server --model mlx-community/Qwen3.5-4B-MLX-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
 ```
 
 GPU に使えるメモリが 10 GB 未満の Mac（メモリ 8 GB）では、4B でも遅くて実用にならないので、メニューの切り替えでも、設定ファイルで有効にしたうえでの「整形サーバを起動」でも、理由を知らせて整形を動かさない。フィラーは規則で消える。
@@ -344,8 +344,9 @@ GPU に使えるメモリが 10 GB 未満の Mac（メモリ 8 GB）では、4B 
 話した文の句読点と空白を整える任意の機能で、手元の Mac で動くサーバを使う。
 入れ方から動作確認までを [docs/local-llm.md](docs/local-llm.md) に書いた。使わなくても音声入力は動き、フィラー（えっと、えー、あのー 等）は LLM なしの規則で消える。
 
-**なぜ既定のモデルが Qwen3-4B で、8B は任意なのか。**（余裕のある Mac では、初回に一度だけ「8B に上げられる」と知らせ、以後はメニューの項目だけが残る。）
-「キーを離して 1 秒以内」に入るかで決めている。M2 の MacBook Air では 8B が中央値 1.2 秒で入らず、4B は 0.7 秒でフィラーを消せた。M4 Pro の Mac mini では 8B が 0.5 秒で、数値の扱いは 8B の方が良い。そこで 4B を既定にし、余裕のある Mac にはメニューで 8B への切り替えを出す。1.7B 以下はフィラーを消さずに返す。27B は 3〜7 秒かかる。計測の表は [docs/local-llm.md](docs/local-llm.md#モデルをどう選んだか) にある。
+**なぜ既定のモデルが Qwen3.5-4B で、8B は任意なのか。**（余裕のある Mac では、初回に一度だけ「8B に上げられる」と知らせ、以後はメニューの項目だけが残る。）
+大きさは「キーを離して 1 秒以内」に入るかで決めた。M2 の MacBook Air では Qwen3-8B が中央値 1.2 秒で入らず、Qwen3-4B は 0.7 秒でフィラーを消せた。M4 Pro の Mac mini では 8B が 0.5 秒で、数値の扱いは 8B の方が良かった。そこで 4B を既定にし、余裕のある Mac にはメニューで 8B への切り替えを出す。1.7B 以下はフィラーを消さずに返す。27B は 3〜7 秒かかる。
+その後、2026-11-16 に Mac mini で 8 モデルを比べ、既定の 4B を Qwen3-4B から Qwen3.5-4B に替えた。作者の履歴 221 発話で、検証を通って挿入された発話が最も多く（Qwen3.5-4B は 214、Qwen3-4B は 194、Qwen3-8B は 182）、所要は Qwen3-4B と同程度だった。弱点は、英数字の隣の半角空白を入力から消したり足したりすることである。Qwen3.5-4B は M2 の Air では測っていないので、Air で 1 秒に入るかは確かめていない。計測の表は [docs/local-llm.md](docs/local-llm.md#モデルをどう選んだか) にある。
 
 **話した内容はどこかに送られるか。**
 既定の設定では送られない。認識は Apple の端末内モデルで、整形の接続先は既定で `127.0.0.1`（この Mac）である。`formatter.endpoint` を他のホスト（オンラインの API を含む）にすれば、整形に送る本文（数値は印に置き換えたもの）はそこへ出る。その場合は、オンにしたときにトーストで知らせ、メニューの「整形」の行に送信先を出す。履歴は `~/Library/Application Support/Dictate/history.jsonl` に文字として残り、音声は保存しない。

@@ -468,7 +468,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             action("フィラーを消す（えっと、あのー 等）", #selector(toggleRemoveFillers)).state = config.removeFillers ? .on : .off
             action("LLM で整える（句読点）", #selector(toggleFormatter)).state = config.formatter.enabled ? .on : .off
             if canUpgradeFormatterModel { _ = action("整形モデルを 8B に上げる（約 4.3 GB のダウンロード）", #selector(upgradeFormatterModel)) }
-            if canDowngradeFormatterModel { _ = action("整形モデルを 4B に替える（約 2.5 GB のダウンロード）", #selector(downgradeFormatterModel)) }
+            if canDowngradeFormatterModel { _ = action("整形モデルを 4B に替える（約 3 GB のダウンロード）", #selector(downgradeFormatterModel)) }
             // この Mac のサーバに接続できないときだけ、起動とログの項目を出す（外の接続先に起動はない）
             if config.formatter.enabled, config.formatter.isLocal, formatterReachable != true {
                 switch formatterServer.state {

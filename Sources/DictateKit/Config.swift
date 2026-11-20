@@ -115,10 +115,11 @@ public struct Config: Sendable, Equatable, Codable {
     public struct Formatter: Sendable, Equatable, Codable {
         public var enabled = false
         public var endpoint = URL(string: "http://127.0.0.1:8124/v1")!
-        /// 既定は 4B。M2 の MacBook Air で 8B は予算 1 秒に入らず、4B はフィラーを消せた（ADR-15）。
+        /// 既定は 4B。M2 の MacBook Air で 8B は予算 1 秒に入らず、4B はフィラーを消せた（ADR-15。当時は Qwen3-4B）。
+        /// 4B は 2026-11-16 の比較で Qwen3.5-4B に替えた。Air では測っていない（docs/local-llm.md）。
         /// 温めの後の計測で余裕がある Mac には、メニューで 8B への切り替えを出す。
         public var model = Self.smallModel
-        public static let smallModel = "mlx-community/Qwen3-4B-4bit"
+        public static let smallModel = "mlx-community/Qwen3.5-4B-MLX-4bit"
         public static let largeModel = "mlx-community/Qwen3-8B-4bit"
         /// 確定からこの秒数以内に検証済みの結果が届かなければ、整形前の文を挿入する。
         public var budgetSeconds = 1.0

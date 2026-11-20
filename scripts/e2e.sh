@@ -88,7 +88,7 @@ if [[ "${DICTATE_LLM_E2E:-}" == 1 ]]; then
     python3 - "$home" "$flag" "$port" <<'PY'
 import json, sys
 home, flag, port = sys.argv[1:]
-command = (f"if [[ -e {flag} ]]; then exec mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port {port} "
+command = (f"if [[ -e {flag} ]]; then exec mlx_lm.server --model mlx-community/Qwen3.5-4B-MLX-4bit --port {port} "
            f"--chat-template-args '{{\"enable_thinking\": false}}'; else touch {flag}; exit 1; fi")
 json.dump({"formatter": {"enabled": True, "endpoint": f"http://127.0.0.1:{port}/v1", "startCommand": command}},
           open(f"{home}/config.json", "w"), ensure_ascii=False)
