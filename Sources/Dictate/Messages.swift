@@ -50,9 +50,6 @@ enum Messages {
         let memory = gpuMemoryGB.map { String(format: "%.0f GB", $0) } ?? "不明"
         return "この Mac では LLM 整形を使えません。GPU に使えるメモリが \(memory) で、実用には 10 GB 以上（メモリ 16 GB 以上の Mac）が要ります。フィラーは規則で消えます。"
     }
-    static func formatterCanUpgrade(seconds: Double) -> String {
-        "整形に \(String(format: "%.1f", seconds)) 秒で余裕があります。メニューの「整形モデルを 8B に上げる」で、数値の扱いが良い 8B に替えられます（約 4.3 GB のダウンロード）。"
-    }
     /// canDowngrade は、既定の組で 8B を使っていて、メニューに「4B に替える」が出ているとき。
     static func formatterSlow(seconds: Double, budget: Double, canDowngrade: Bool) -> String {
         let remedy = canDowngrade

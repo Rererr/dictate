@@ -321,6 +321,28 @@ import Testing
         #expect(Config.Formatter.defaultStartCommand(model: "x/y").contains("--model x/y "))
     }
 
+    @Test func モデルの切り替えは8Bの既定の組が予算を超えたときに4Bへ戻すものだけ() {
+        var formatter = Config.Formatter()
+        // 既定の 4B は、速くても遅くても切り替えを出さない（8B へ上げる提案はしない。ADR-15）
+        #expect(!formatter.offersDowngrade(measuredSeconds: 0.1))
+        #expect(!formatter.offersDowngrade(measuredSeconds: 3))
+        formatter.model = Config.Formatter.largeModel
+        formatter.startCommand = Config.Formatter.defaultStartCommand(model: Config.Formatter.largeModel)
+        #expect(formatter.offersDowngrade(measuredSeconds: 1.2))
+        #expect(!formatter.offersDowngrade(measuredSeconds: 0.5))
+        #expect(!formatter.offersDowngrade(measuredSeconds: 1.0), "予算ちょうどは予算内")
+        var patient = formatter
+        patient.budgetSeconds = 2
+        #expect(!patient.offersDowngrade(measuredSeconds: 1.2), "予算を延ばした人には出さない")
+        #expect(!formatter.offersDowngrade(measuredSeconds: nil), "温めの計測の前は出さない")
+        var custom = formatter
+        custom.startCommand = "my_server --port 8124"
+        #expect(!custom.offersDowngrade(measuredSeconds: 1.2), "本人が書いた起動コマンドの組は触らない")
+        var remote = formatter
+        remote.endpoint = URL(string: "http://192.168.1.10:8124/v1")!
+        #expect(!remote.offersDowngrade(measuredSeconds: 1.2), "この Mac 以外の接続先では切り替えない")
+    }
+
     @Test func LLM整形はGPUに使えるメモリが10GB未満なら使えない() {
         #expect(!Machine.supportsFormatter(gpuMemoryGB: 5.3))
         #expect(!Machine.supportsFormatter(gpuMemoryGB: nil))

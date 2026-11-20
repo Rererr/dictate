@@ -320,10 +320,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     formatterSeconds = seconds
                     if seconds > config.formatter.budgetSeconds {
                         overlay.showToast(Messages.formatterSlow(seconds: seconds, budget: config.formatter.budgetSeconds, canDowngrade: canDowngradeFormatterModel))
-                    } else if canUpgradeFormatterModel, !UserDefaults.standard.bool(forKey: Self.upgradeSuggestedKey) {
-                        // 4B を選んで使う人に起動のたびに勧めない。メニューの項目は残る
-                        UserDefaults.standard.set(true, forKey: Self.upgradeSuggestedKey)
-                        overlay.showToast(Messages.formatterCanUpgrade(seconds: seconds))
                     }
                 }
                 return
@@ -334,32 +330,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 接続先のホスト。トーストとメニューで「どこに送るか」を示す（endpoint は読み込み時にホストがあることを確かめている）
     private var formatterHost: String { config.formatter.endpoint.host() ?? config.formatter.endpoint.absoluteString }
 
-    /// 「8B に上げられる」を一度知らせたか。設定ではなくアプリの状態なので config.json には書かない
-    private static let upgradeSuggestedKey = "formatterUpgradeSuggested"
+    private var canDowngradeFormatterModel: Bool { config.formatter.offersDowngrade(measuredSeconds: formatterSeconds) }
 
-    /// 4B で予算の 4 割以下なら、8B（2 倍弱の所要）も予算に入る見込み。既定の組のときだけ切り替えを出す
-    private var canUpgradeFormatterModel: Bool {
-        guard let seconds = formatterSeconds, config.formatter.usesDefaultServer, config.formatter.model == Config.Formatter.smallModel else { return false }
-        return seconds <= config.formatter.budgetSeconds * 0.4
-    }
-
-    private var canDowngradeFormatterModel: Bool {
-        guard let seconds = formatterSeconds, config.formatter.usesDefaultServer, config.formatter.model == Config.Formatter.largeModel else { return false }
-        return seconds > config.formatter.budgetSeconds
-    }
-
-    @objc private func upgradeFormatterModel() { switchFormatterModel(to: Config.Formatter.largeModel) }
-    @objc private func downgradeFormatterModel() { switchFormatterModel(to: Config.Formatter.smallModel) }
-
-    /// モデルと起動コマンドを既定の組で書き換え、サーバを立て直す。
+    /// モデルと起動コマンドを既定の 4B の組で書き換え、サーバを立て直す。
     /// 旧サーバが消えるのを待ってから設定を変える。待たないと、再読み込みの接続確認が閉じかけの旧サーバに届き、新しいサーバを起動しない
-    private func switchFormatterModel(to model: String) {
+    @objc private func downgradeFormatterModel() {
         Task {
             await formatterServer.stopAndWait()
             formatterAttempted = false
             updateConfig {
-                $0.formatter.model = model
-                $0.formatter.startCommand = Config.Formatter.defaultStartCommand(model: model)
+                $0.formatter.model = Config.Formatter.smallModel
+                $0.formatter.startCommand = Config.Formatter.defaultStartCommand(model: Config.Formatter.smallModel)
             }
         }
     }
@@ -467,7 +448,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             action("発話の後に改行する", #selector(toggleNewlineAfterUtterance)).state = config.newlineAfterUtterance ? .on : .off
             action("フィラーを消す（えっと、あのー 等）", #selector(toggleRemoveFillers)).state = config.removeFillers ? .on : .off
             action("LLM で整える（句読点）", #selector(toggleFormatter)).state = config.formatter.enabled ? .on : .off
-            if canUpgradeFormatterModel { _ = action("整形モデルを 8B に上げる（約 4.3 GB のダウンロード）", #selector(upgradeFormatterModel)) }
             if canDowngradeFormatterModel { _ = action("整形モデルを 4B に替える（約 3 GB のダウンロード）", #selector(downgradeFormatterModel)) }
             // この Mac のサーバに接続できないときだけ、起動とログの項目を出す（外の接続先に起動はない）
             if config.formatter.enabled, config.formatter.isLocal, formatterReachable != true {

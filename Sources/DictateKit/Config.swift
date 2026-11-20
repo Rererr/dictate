@@ -117,9 +117,9 @@ public struct Config: Sendable, Equatable, Codable {
         public var endpoint = URL(string: "http://127.0.0.1:8124/v1")!
         /// 既定は 4B。M2 の MacBook Air で 8B は予算 1 秒に入らず、4B はフィラーを消せた（ADR-15。当時は Qwen3-4B）。
         /// 4B は 2026-11-16 の比較で Qwen3.5-4B に替えた。Air では測っていない（docs/local-llm.md）。
-        /// 温めの後の計測で余裕がある Mac には、メニューで 8B への切り替えを出す。
         public var model = Self.smallModel
         public static let smallModel = "mlx-community/Qwen3.5-4B-MLX-4bit"
+        /// 以前の版のメニューで上げられた 8B。勧めはしないが、この組（モデルと起動コマンドが 8B の既定の組）を使う人が予算に入らなければ 4B に戻す項目を出す（ADR-15）。
         public static let largeModel = "mlx-community/Qwen3-8B-4bit"
         /// 確定からこの秒数以内に検証済みの結果が届かなければ、整形前の文を挿入する。
         public var budgetSeconds = 1.0
@@ -148,6 +148,12 @@ public struct Config: Sendable, Equatable, Codable {
         public var isLocal: Bool { ["127.0.0.1", "localhost", "::1"].contains(endpoint.host()?.lowercased() ?? "") }
         /// この Mac のサーバで、モデルと起動コマンドが既定の組（アプリがモデルを切り替えてよい状態）か。
         public var usesDefaultServer: Bool { isLocal && startCommand == Self.defaultStartCommand(model: model) }
+        /// メニューに「4B に替える」を出すか。8B の既定の組で、温めの直後の 1 文が予算を超えたときだけ。
+        /// 8B へ上げる切り替えは出さない（2026-11-16 の比較で、既定の 4B の方が採用も所要も良かった。ADR-15）
+        public func offersDowngrade(measuredSeconds: Double?) -> Bool {
+            guard let measuredSeconds, usesDefaultServer, model == Self.largeModel else { return false }
+            return measuredSeconds > budgetSeconds
+        }
 
         public init() {}
 
