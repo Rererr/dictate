@@ -95,6 +95,8 @@ enum Messages {
         let more = skipped.count > 2 ? "ほかに \(skipped.count - 2) 行を読めません。" : ""
         return "\(reasons)\(more)読めない行を飛ばし、残りの行で辞書を作りました。直してから、メニューの「設定と辞書を再読み込み」を選んでください。"
     }
+    static func dictionaryRowsAdded(_ count: Int) -> String { "辞書に \(count) 行を足し、読み直しました。次の発話から効きます。" }
+    static func dictionaryWriteFailed(_ detail: String) -> String { "辞書に書けませんでした（\(detail)）。dictionary.tsv に書けるかを確かめてください。" }
     static func loadFailed(_ detail: String) -> String { "\(detail)対応してから、メニューの「設定と辞書を再読み込み」を選んでください。" }
     static func configWriteFailed(_ detail: String) -> String { "設定ファイルを書き出せませんでした（\(detail)）。今あるファイルをそのまま開きます。" }
     static let configMissing = "設定ファイルを作れませんでした。~/Library/Application Support/Dictate/ に書けるかを確かめてください。"

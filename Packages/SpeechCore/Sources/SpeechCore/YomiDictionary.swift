@@ -78,13 +78,46 @@ public struct YomiDictionary: Sendable {
 
     public var isEmpty: Bool { surfaces.isEmpty }
 
+    /// 読みだけで引く辞書（表記は読みそのもの）。ある読みが文のどこに現れるかを数えるために使う。
+    public static func matcher(readings: [String]) -> YomiDictionary {
+        YomiDictionary(entries: readings.map { Entry(surface: $0, reading: $0) })
+    }
+
     public func apply(_ text: String) -> Replaced {
         guard !surfaces.isEmpty else { return Replaced(text: text, replacements: []) }
         let source = text as NSString
-        let tokens = Self.tokens(of: text)
         var output = ""
         var replacements: [Replacement] = []
         var cursor = 0
+        for match in matches(in: text) {
+            output += source.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            output += match.surface
+            if match.original != match.surface {
+                replacements.append(Replacement(original: match.original, surface: match.surface))
+            }
+            cursor = NSMaxRange(match.range)
+        }
+        output += source.substring(from: cursor)
+        return Replaced(text: output, replacements: replacements)
+    }
+
+    /// 照合キーに一致した区間の原文。履歴で、ある読みがどの表記で現れているかを数えるために使う。
+    public func occurrences(in text: String) -> [String] {
+        matches(in: text).map(\.original)
+    }
+
+    /// 一致した区間。`surface` は辞書の表記（`matcher(readings:)` の辞書なら読みそのもの）。
+    public struct Match: Sendable, Equatable {
+        public let range: NSRange
+        public let original: String
+        public let surface: String
+    }
+
+    public func matches(in text: String) -> [Match] {
+        guard !surfaces.isEmpty else { return [] }
+        let source = text as NSString
+        let tokens = Self.tokens(of: text)
+        var result: [Match] = []
         var index = 0
         while index < tokens.count {
             guard let match = longestMatch(in: tokens, from: index) else {
@@ -92,18 +125,11 @@ public struct YomiDictionary: Sendable {
                 continue
             }
             let start = tokens[index].range.location
-            let end = NSMaxRange(tokens[match.last].range)
-            let original = source.substring(with: NSRange(location: start, length: end - start))
-            output += source.substring(with: NSRange(location: cursor, length: start - cursor))
-            output += match.surface
-            if original != match.surface {
-                replacements.append(Replacement(original: original, surface: match.surface))
-            }
-            cursor = end
+            let range = NSRange(location: start, length: NSMaxRange(tokens[match.last].range) - start)
+            result.append(Match(range: range, original: source.substring(with: range), surface: match.surface))
             index = match.last + 1
         }
-        output += source.substring(from: cursor)
-        return Replaced(text: output, replacements: replacements)
+        return result
     }
 
     private func longestMatch(in tokens: [Token], from first: Int) -> (last: Int, surface: String)? {
@@ -128,6 +154,20 @@ public struct YomiDictionary: Sendable {
         /// text を NSString として数えた範囲。
         public let range: NSRange
         public let reading: String
+    }
+
+    /// 文を単語に分けた結果。辞書の一致と同じ境界（差分から辞書の行を提案するときに、区間をこの境界まで広げる）。
+    public struct Word: Sendable, Equatable {
+        public let range: Range<String.Index>
+        public let text: String
+        public let reading: String
+    }
+
+    public static func words(of text: String) -> [Word] {
+        tokens(of: text).compactMap { token in
+            guard let range = Range(token.range, in: text) else { return nil }
+            return Word(range: range, text: String(text[range]), reading: token.reading)
+        }
     }
 
     private static func tokens(of text: String) -> [Token] {

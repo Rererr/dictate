@@ -3,6 +3,10 @@ import SpeechCore
 
 /// 字幕とトーストの目視確認用。実動作と同じ文言を、台本どおりの間隔で出す。
 struct DemoScenario {
+    /// デモ再生で「直前の発話を直して辞書に足す」の窓を開くための発話（ADR-18）。誤認識の例を含む。
+    static let misrecognized = "領民が良い状態で、極東の処置はなし"
+    static let corrected = "良眠が良い状態で、褥瘡の処置はなし"
+
     enum Action {
         case caption(Overlay.CaptionKind, String)
         case closeCaption

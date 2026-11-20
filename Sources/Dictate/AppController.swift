@@ -38,6 +38,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var dictionarySkipped: [YomiDictionary.ParseError] = []
     private var hotKey: (any HotkeyListener)?
     private var recorder: HotkeyRecorder?
+    private var correction: CorrectionWindow?
     /// これより短く離した押下は誤操作として、何も出さずに捨てる。
     private static let minimumHold = Duration.milliseconds(300)
     private var loadError: String?
@@ -58,6 +59,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var formatterAttempted = false
     /// nil は確認中。
     private var modelInstalled: Bool?
+    /// デモ再生では、窓を開けるようにデモの発話を持つ（ADR-18）
     private var lastUtterance: String?
 
     init(demo: Bool, autoplay: Int? = nil, openMenuAfter: Double? = nil, select: (title: String, after: Double)? = nil) {
@@ -94,6 +96,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         guard !demo else {
+            lastUtterance = DemoScenario.misrecognized
             if let autoplay, DemoScenario.all.indices.contains(autoplay) { play(DemoScenario.all[autoplay]) }
             return
         }
@@ -499,6 +502,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = action(config.editor == nil ? "設定ファイルを開く…" : "設定ファイルを開く", #selector(openConfigFile))
         _ = action("設定と辞書を再読み込み", #selector(reloadFromMenu))
         _ = action(lastUtterance == nil ? "直前の発話をコピー（まだありません）" : "直前の発話をコピー", #selector(copyLastUtterance), enabled: lastUtterance != nil)
+        _ = action(lastUtterance == nil ? "直前の発話を直して辞書に足す…（まだありません）" : "直前の発話を直して辞書に足す…", #selector(correctLastUtterance), enabled: lastUtterance != nil)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
@@ -728,6 +732,35 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let error else { return }
             Task { @MainActor in self?.overlay.showToast(Messages.openFailed(app.deletingPathExtension().lastPathComponent, error.localizedDescription)) }
         }
+    }
+
+    /// 直前の発話を窓で直し、差分から辞書の行を足す（ADR-18）。
+    @objc private func correctLastUtterance() {
+        if let correction {
+            correction.bringToFront()
+            return
+        }
+        guard let lastUtterance else { return }
+        let texts = config.history.enabled ? HistoryReader.insertedTexts(at: AppPaths.history) : []
+        let correction = CorrectionWindow(original: lastUtterance, corrected: demo ? DemoScenario.corrected : nil, historyTexts: demo ? [DemoScenario.misrecognized, "領民の暮らし"] : texts) { [weak self] rows in
+            guard let self else { return }
+            self.correction = nil
+            guard let rows else { return }
+            if demo {
+                overlay.showToast(Messages.dictionaryRowsAdded(rows.count))
+                return
+            }
+            do {
+                try DictionaryFile.append(rows, to: AppPaths.dictionary)
+            } catch {
+                overlay.showToast(Messages.dictionaryWriteFailed(error.localizedDescription))
+                return
+            }
+            reload(keepFormatterState: true)
+            overlay.showToast(Messages.dictionaryRowsAdded(rows.count))
+        }
+        self.correction = correction
+        correction.show()
     }
 
     @objc private func copyLastUtterance() {

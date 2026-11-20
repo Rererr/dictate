@@ -105,6 +105,25 @@ public struct FormatRecord: Sendable, Codable, Equatable {
     }
 }
 
+/// 履歴の読み取り。辞書の行を提案するときに、読みの出現を数えるためだけに読む。
+public enum HistoryReader {
+    private struct Line: Decodable {
+        let type: String
+        let inserted: String?
+    }
+
+    /// 挿入した文を、今のファイルと繰り越し分（`.1`）から集める。読めない行は飛ばす（履歴は本人の文で、1 行の崩れで全体を止めない）。
+    public static func insertedTexts(at url: URL) -> [String] {
+        [url.appendingPathExtension("1"), url].flatMap { file -> [String] in
+            guard let data = try? Data(contentsOf: file) else { return [] }
+            return data.split(separator: 0x0A).compactMap { line in
+                guard let record = try? JSONDecoder().decode(Line.self, from: line), record.type == "utterance" else { return nil }
+                return record.inserted
+            }
+        }
+    }
+}
+
 /// 1 行 1 イベントの追記専用。行の書き換えと削除はしない。
 /// 上限を超えたらファイルごと `.1` に繰り越す（話した全文が無期限に溜まらないように）。
 public struct HistoryWriter: Sendable {

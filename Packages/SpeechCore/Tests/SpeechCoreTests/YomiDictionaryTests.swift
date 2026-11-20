@@ -80,3 +80,23 @@ import Testing
         #expect(accumulator.runs.count == 2)
     }
 }
+
+@Suite struct 読みの検索 {
+    @Test func 読みだけの辞書で原文の出現を数える() {
+        let matcher = YomiDictionary.matcher(readings: ["かいぎょう"])
+        #expect(matcher.occurrences(in: "改行します。開業の日に改行した") == ["改行", "開業", "改行"])
+        #expect(matcher.occurrences(in: "海洋の話").isEmpty)
+    }
+
+    @Test func 平仮名の読みは正規化しても変わらない() {
+        #expect(YomiDictionary.reading(of: "りょうみん") == "りょうみん")
+        #expect(YomiDictionary.reading(of: "ゆかづれ") == "ゆかづれ")
+    }
+
+    @Test func 語の切り出しは原文の範囲と読みを持つ() {
+        let words = YomiDictionary.words(of: "領民が良い")
+        #expect(words.map(\.text) == ["領民", "が", "良い"])
+        #expect(words.first?.reading == "りょうみん")
+        #expect(words.allSatisfy { String("領民が良い"[$0.range]) == $0.text })
+    }
+}
