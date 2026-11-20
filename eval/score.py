@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """評価シートの書き出しと履歴を突き合わせ、精度と遅延を集計する。
 
-使い方: score.py dictate-eval.json [--history PATH]
+使い方: score.py dictate-eval.json [--history PATH] [--recognizer transcriber|dictation]
   読み正規化後の CER には、同じ場所の yomi（yomi.swift を組んだ実行ファイル）を使う。無ければその列だけ未計測になる。
     swiftc -O -o eval/yomi eval/yomi.swift
 
@@ -59,10 +59,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("export", type=Path)
     parser.add_argument("--history", type=Path, default=DEFAULT_HISTORY)
+    parser.add_argument("--recognizer", choices=["transcriber", "dictation"],
+                        help="この認識器の発話だけを採点する（設計書 ADR-19 の比較。履歴の recognizer の項目で絞る。古い履歴には項目が無く、transcriber として扱う）")
     args = parser.parse_args()
 
     rows = json.loads(args.export.read_text(encoding="utf-8"))["rows"]
     utterances, formats = load_history(args.history)
+    if args.recognizer:
+        utterances = [u for u in utterances if u.get("recognizer", "transcriber") == args.recognizer]
 
     matched, unmatched = [], []
     for row in rows:

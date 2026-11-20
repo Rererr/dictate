@@ -308,10 +308,12 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
   "alwaysPasteBundleIds": [],
   "newlineAfterUtterance": false,
   "editor": null,
-  "removeFillers": true
+  "removeFillers": true,
+  "recognizer": "transcriber"
 }
 ```
 
+`recognizer` は認識器。既定の `"transcriber"` は Apple の新しい長文向けモデル。`"dictation"` はシステムの音声入力と同じエンジンで、辞書の表記（先頭 100 語）を語彙として認識器に渡す。精度の比較は未計測で、計測のための設定（設計書 ADR-19）。
 `hotkey` は登録の窓が書く。手で書く場合、`code` は仮想キーコードで、マウスボタンは `{ "type": "mouse", "button": 3, "modifiers": [] }` の形になる（2 が中ボタン、3 以降がサイドボタン）。
 
 書式が壊れているとき、知らない項目名があるとき、値が範囲外のとき（`budgetSeconds` は 0 より大きく 30 以下、`temperature` は 0〜2 か `null`、`maxTokens` は 1〜4096、`endpoint` は http か https）は、既定値には読み替えず、箇所を示して停止する。

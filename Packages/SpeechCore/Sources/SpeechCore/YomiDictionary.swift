@@ -78,6 +78,9 @@ public struct YomiDictionary: Sendable {
 
     public var isEmpty: Bool { surfaces.isEmpty }
 
+    /// 辞書の表記（重複なし、辞書順）。認識器に語彙として渡す。
+    public var vocabulary: [String] { Array(Set(surfaces.values)).sorted() }
+
     /// 読みだけで引く辞書（表記は読みそのもの）。ある読みが文のどこに現れるかを数えるために使う。
     public static func matcher(readings: [String]) -> YomiDictionary {
         YomiDictionary(entries: readings.map { Entry(surface: $0, reading: $0) })

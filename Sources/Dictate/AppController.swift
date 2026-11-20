@@ -121,7 +121,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 日本語の認識モデルが入っているかを確かめる。
     private func checkModel(notifyIfMissing: Bool) {
         Task {
-            modelInstalled = await LiveTranscriber().isModelInstalled()
+            modelInstalled = await LiveTranscriber(engine: config.recognizer).isModelInstalled()
             if notifyIfMissing, modelInstalled == false { overlay.showToast(Messages.modelNotInstalled) }
         }
     }
@@ -815,7 +815,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         overlay.showCaption(.recording, Messages.listening)
-        let transcriber = LiveTranscriber()
+        let transcriber = LiveTranscriber(engine: config.recognizer, vocabulary: dictionary.vocabulary)
         let session = Task { [weak self] in
             var accumulator = TranscriptAccumulator()
             do {
@@ -959,7 +959,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 releaseToFinal: (finalized - released).seconds,
                 postprocess: (postprocessed - finalized).seconds,
                 insert: (inserted - postprocessed).seconds
-            )
+            ),
+            recognizer: config.recognizer
         ))
 
         let outcome = InsertionRules.outcome(text: text, insertion: insertion, command: command, sends: sends, formatSkipped: formatSkipped)

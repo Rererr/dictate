@@ -514,6 +514,12 @@ import Testing
         #expect(config.formatter.usesDefaultServer == local)
     }
 
+    @Test func 認識器は既定がtranscriberで設定ファイルから切り替えられる() throws {
+        #expect(try Config.load(from: write("{}")).recognizer == .transcriber)
+        #expect(try Config.load(from: write(#"{"recognizer": "dictation"}"#)).recognizer == .dictation)
+        #expect(throws: Config.LoadError.self) { try Config.load(from: write(#"{"recognizer": "whisper"}"#)) }
+    }
+
     @Test func プロンプトが未設定でも項目をnullで書き出す() throws {
         let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString)/config.json")
         try Config.update(at: url)

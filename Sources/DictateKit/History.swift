@@ -68,10 +68,12 @@ public struct UtteranceRecord: Sendable, Codable, Equatable {
     public let insertion: Insertion
     public let app: String?
     public let timings: Timings
+    /// 認識器（ADR-19）。§7.2 の再計測で、どちらの認識器の発話かを履歴から分けるため。古い履歴には無い
+    public let recognizer: LiveTranscriber.Engine?
 
     public init(
         id: String, startedAt: Date, recordingSeconds: Double, raw: String, runs: [Run], post: Postprocessed,
-        inserted: String, insertion: Insertion, app: String?, timings: Timings
+        inserted: String, insertion: Insertion, app: String?, timings: Timings, recognizer: LiveTranscriber.Engine? = nil
     ) {
         self.id = id
         self.startedAt = startedAt
@@ -85,6 +87,7 @@ public struct UtteranceRecord: Sendable, Codable, Equatable {
         self.insertion = insertion
         self.app = app
         self.timings = timings
+        self.recognizer = recognizer
     }
 }
 

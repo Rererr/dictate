@@ -1,4 +1,5 @@
 import Foundation
+import SpeechCore
 
 public struct Config: Sendable, Equatable, Codable {
     public struct Hotkey: Sendable, Equatable, Codable {
@@ -237,6 +238,8 @@ public struct Config: Sendable, Equatable, Codable {
     public var editor: String?
     /// ルールでフィラーを消す（LLM の有無に関わらず）。
     public var removeFillers = true
+    /// 認識器。既定は transcriber（Apple の新しい長文向けモデル）。dictation は音声入力と同じエンジンで、辞書の表記を語彙として渡す（§7.2 の再計測用。ADR-19）。
+    public var recognizer = LiveTranscriber.Engine.transcriber
 
     public init() {}
 
@@ -250,6 +253,7 @@ public struct Config: Sendable, Equatable, Codable {
         newlineAfterUtterance = try container.decodeIfPresent(Bool.self, forKey: .newlineAfterUtterance) ?? newlineAfterUtterance
         editor = try container.decodeIfPresent(String.self, forKey: .editor)
         removeFillers = try container.decodeIfPresent(Bool.self, forKey: .removeFillers) ?? removeFillers
+        recognizer = try container.decodeIfPresent(LiveTranscriber.Engine.self, forKey: .recognizer) ?? recognizer
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -262,9 +266,10 @@ public struct Config: Sendable, Equatable, Codable {
         // 項目があることが設定ファイルから分かるように、未設定でも null で書き出す
         try container.encode(editor, forKey: .editor)
         try container.encode(removeFillers, forKey: .removeFillers)
+        try container.encode(recognizer, forKey: .recognizer)
     }
 
-    private enum CodingKeys: String, CodingKey, CaseIterable { case hotkey, formatter, history, alwaysPasteBundleIds, newlineAfterUtterance, editor, removeFillers }
+    private enum CodingKeys: String, CodingKey, CaseIterable { case hotkey, formatter, history, alwaysPasteBundleIds, newlineAfterUtterance, editor, removeFillers, recognizer }
 
     public enum LoadError: Error, LocalizedError, Equatable {
         case unreadable(path: String, detail: String)
