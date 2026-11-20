@@ -46,6 +46,18 @@ enum Messages {
     static let formatterStarting = "整形サーバを起動しています。接続できるまでは整形前の文を挿入します。"
     static let formatterConnected = "整形サーバに接続できました。モデルを読み込んでいます。初回はダウンロードで数分かかり、終わるまでは整形前の文を挿入します。"
     static let formatterReady = "整形の準備ができました。"
+    /// 以前の既定（v0.2.0 までの Qwen3-4B）の組のままだった設定を、起動時に今の既定へ移したとき（ADR-15）。整形サーバを立てない人には、ダウンロードの話をしない
+    static func formatterModelMigrated(downloads: Bool) -> String {
+        "整形のモデルを、以前の既定の Qwen3-4B から今の既定の Qwen3.5-4B に替え、config.json に書き戻しました。"
+            + (downloads ? "整形の前に約 3 GB のダウンロードがあります。" : "")
+            + formatterModelRevert
+    }
+    /// 整形が有効なら、起動直後のトーストは整形サーバの知らせに置き換わるので、接続できた知らせに添える
+    static let formatterModelMigratedOnConnect = "モデルは起動時に、以前の既定の Qwen3-4B から Qwen3.5-4B に替えました（約 3 GB）。" + formatterModelRevert
+    private static let formatterModelRevert = "Qwen3-4B に戻すなら、config.json の formatter.model と startCommand のモデル名を書き換えてください（もう一度は替えません）。"
+    /// トーストは次の知らせに置き換わりうるので、この起動の間はメニューにも出す
+    static let formatterModelMigratedMenu = "整形のモデル: 起動時に、以前の既定の Qwen3-4B から Qwen3.5-4B に替えました（戻すなら config.json の model と startCommand）"
+    static func formatterModelMigrationFailed(_ detail: String) -> String { "整形のモデルを以前の既定から移せませんでした（\(detail)）。次の起動でもう一度確かめます。" }
     static func formatterUnsupported(gpuMemoryGB: Double?) -> String {
         let memory = gpuMemoryGB.map { String(format: "%.0f GB", $0) } ?? "不明"
         return "この Mac では LLM 整形を使えません。GPU に使えるメモリが \(memory) で、実用には 10 GB 以上（メモリ 16 GB 以上の Mac）が要ります。フィラーは規則で消えます。"

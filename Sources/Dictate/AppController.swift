@@ -57,6 +57,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 接続できないときの知らせと自動起動は、オンにしたときと起動時に一度だけ行う。
     /// 他の設定を切り替えるたびには繰り返さず、やり直しはメニューの「整形サーバを起動」で本人が行う
     private var formatterAttempted = false
+    /// 起動時に、以前の既定のモデルから移したか。トーストは次の知らせに置き換わりうるので、この起動の間はメニューにも出す
+    private var formatterModelMigrated = false
+    /// 移したことを、整形サーバに接続できた知らせ（ダウンロードが始まる時点）に一度だけ添える
+    private var formatterMigrationNoticePending = false
     /// nil は確認中。
     private var modelInstalled: Bool?
     /// デモ再生では、窓を開けるようにデモの発話を持つ（ADR-18）
@@ -79,6 +83,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // メニューは開く直前（menuNeedsUpdate）にだけ組む。許可の状態を開いた時点の値で出せる
         menu.delegate = self
         statusItem.menu = menu
+        migrateFormatterModel()
         reload()
         // 項目がメニューバーに載るのを待ってから開く（起動の直後では開かない）
         if let openMenuAfter { Task { try? await Task.sleep(for: .seconds(openMenuAfter)); statusItem.button?.performClick(nil) } }
@@ -169,6 +174,24 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             formatterWarmUp?.cancel()
         }
         ensureFormatter()
+    }
+
+    /// 以前の既定の組のままの設定を、今の既定の組へ移す（ADR-15）。整形サーバを立てる前（起動時の reload の前）にだけ行う
+    private func migrateFormatterModel() {
+        guard !demo else { return }
+        do {
+            guard let migrated = try FormatterModelMigration.run(config: AppPaths.config) else { return }
+            formatterModelMigrated = true
+            // 整形サーバを立てるなら、このトーストは起動の知らせにすぐ置き換わるので、接続できた知らせにも添える。
+            // reload の後でなく前に出すのは、reload が出す知らせ（設定エラー、辞書の読めない行、この Mac では使えない）を上書きしないため
+            let downloads = migrated.enabled && Machine.supportsFormatter
+            formatterMigrationNoticePending = downloads
+            overlay.showToast(Messages.formatterModelMigrated(downloads: downloads))
+        } catch is Config.LoadError {
+            // 読めない設定は、続く reload が理由を出して止まる
+        } catch {
+            overlay.showToast(Messages.formatterModelMigrationFailed(error.localizedDescription))
+        }
     }
 
     /// 届かないと分かったときの状態。メニューは「接続不可」になり、次の発話では整形を試みない
@@ -265,7 +288,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     formatterServer.markRunning()
                     formatterReachable = true
                     // 待ち受けはモデルの読み込みより先に開く。読み込みが終わるまでは整形しない
-                    overlay.showToast(Messages.formatterConnected)
+                    overlay.showToast(Messages.formatterConnected + (formatterMigrationNoticePending ? Messages.formatterModelMigratedOnConnect : ""))
+                    formatterMigrationNoticePending = false
                     warmUpFormatter(client, announce: true)
                     return
                 }
@@ -420,6 +444,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             info("履歴: \(config.history.enabled ? "有効" : "無効")")
             info("辞書: \(dictionary.isEmpty ? "なし" : "読み込み済み")\(dictionarySkipped.isEmpty ? "" : "（\(dictionarySkipped.count) 行を読めなかった）")")
         }
+        // 移した後の読み込みが設定エラーで止まっても、書き換えたことは出す
+        if formatterModelMigrated { info(Messages.formatterModelMigratedMenu) }
         menu.addItem(.separator())
         if !demo {
             // 足りないものがあるときだけ、その設定へ行く項目を出す

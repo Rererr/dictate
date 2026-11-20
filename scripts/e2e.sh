@@ -76,6 +76,25 @@ for _ in {1..100}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
 kill -0 "$pid" 2>/dev/null && { kill -KILL "$pid"; fail "通常モードの終了を送っても 10 秒たっても残っています（pid $pid）" }
 rm -rf "${home:h}"
 
+# 以前の既定の組（v0.2.0 の Qwen3-4B）のままの設定は、起動時に今の既定の組へ書き換え、印を置く（ADR-15）。
+# 整形は無効にしておくので、サーバは立たない
+home="$(mktemp -d)/Dictate"
+mkdir -p "$home"
+cat > "$home/config.json" <<'JSON'
+{ "formatter": { "enabled": false, "endpoint": "http://127.0.0.1:8139/v1", "model": "mlx-community/Qwen3-4B-4bit",
+  "startCommand": "mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'" } }
+JSON
+DICTATE_HOME="$home" "$executable" &
+pid=$!
+sleep 4
+kill -0 "$pid" 2>/dev/null || fail "移行の確認で起動の直後に終了しました（pid $pid）"
+grep -q '"model" : "mlx-community/Qwen3.5-4B-MLX-4bit"' "$home/config.json" || { kill -TERM "$pid"; fail "以前の既定の組を今の既定へ書き換えていません" }
+[[ -f "$home/formatter-model-migrated-from-qwen3-4b.txt" ]] || { kill -TERM "$pid"; fail "移行を確かめた印がありません" }
+kill -TERM "$pid"
+for _ in {1..100}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+kill -0 "$pid" 2>/dev/null && { kill -KILL "$pid"; fail "移行の確認の終了を送っても 10 秒たっても残っています（pid $pid）" }
+rm -rf "${home:h}"
+
 # 整形サーバの実機（DICTATE_LLM_E2E=1 のときだけ）: 起動コマンドが 1 回目は失敗し、メニューの「整形サーバを起動」を選ぶと
 # 本物の mlx_lm.server が別のポートで立つ。接続できることと、アプリが SIGTERM で消えたらサーバも止まることを見る
 if [[ "${DICTATE_LLM_E2E:-}" == 1 ]]; then

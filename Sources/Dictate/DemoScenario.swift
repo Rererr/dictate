@@ -89,6 +89,10 @@ struct DemoScenario {
         toast("デモ: マウスボタンのホットキーで許可がない", Messages.loadFailed(MouseButtonTap.PermissionError().localizedDescription)),
         toast("デモ: 辞書の行を読めない", Messages.dictionarySkipped([.malformedLine(number: 3, content: "Laravel\tららべる\t余分")])),
         toast("デモ: 履歴に書けない", Messages.historyFailed("“history.jsonl”を保存するためのアクセス権がありません。")),
+        // 末尾に足す（--play N の番号を前の場面からずらさない）
+        toast("デモ: 以前の既定の整形モデルから移した（整形が無効）", Messages.formatterModelMigrated(downloads: false)),
+        toast("デモ: 以前の既定の整形モデルから移した（整形が有効。接続の知らせに添える）", Messages.formatterConnected + Messages.formatterModelMigratedOnConnect),
+        toast("デモ: 以前の既定の整形モデルから移せなかった", Messages.formatterModelMigrationFailed("“config.json”を保存するためのアクセス権がありません。")),
     ]
 
     private static func toast(_ title: String, _ message: String) -> DemoScenario {
