@@ -134,7 +134,7 @@ func renderPNG(pixelSize: Int, to url: URL) throws {
     try data.write(to: url)
 }
 
-let build = URL(fileURLWithPath: "build", isDirectory: true)
+let build = URL(fileURLWithPath: "build.noindex", isDirectory: true)
 let iconset = build.appendingPathComponent("AppIcon.iconset", isDirectory: true)
 try? FileManager.default.removeItem(at: iconset)
 try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
