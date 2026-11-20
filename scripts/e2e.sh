@@ -1,12 +1,12 @@
 #!/bin/zsh
 # 組んだアプリが起動して動き続け、終了できることを、実際に開いて確かめる（スモーク）。
 # マイクも認識も許可も使わない --demo で開くので、CI や初めての Mac でも走る。
-# 扱うのは build/Dictate.app から自分が起動したプロセスだけで、~/Applications 等で動いている Dictate には触らない。
+# 扱うのは build.noindex/Dictate.app から自分が起動したプロセスだけで、~/Applications 等で動いている Dictate には触らない。
 # 使い方: scripts/e2e.sh            組んでから確かめる
 #         scripts/e2e.sh --no-build  直前の scripts/bundle.sh の結果を確かめる
 set -euo pipefail
 cd "${0:A:h}/.."
-app="$PWD/build/Dictate.app"
+app="$PWD/build.noindex/Dictate.app"
 executable="$app/Contents/MacOS/Dictate"
 fail() { print -u2 "e2e.sh: $1"; exit 1 }
 # この build の実行ファイルから起動したプロセスの pid（無ければ空）。パスを正規表現にせず、前方一致で見る

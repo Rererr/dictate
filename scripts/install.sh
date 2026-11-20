@@ -44,7 +44,7 @@ for _ in {1..30}; do
 done
 mkdir -p ~/Applications
 rm -rf "$app"
-ditto build/Dictate.app "$app"
+ditto build.noindex/Dictate.app "$app"
 print "置きました: $app"
 # 前のプロセスの終了直後は LaunchServices が -600 で open を拒むことがあるので、少し待って再試行する
 for _ in {1..5}; do

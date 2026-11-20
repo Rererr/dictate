@@ -1,5 +1,5 @@
 #!/bin/zsh
-# build/Dictate.app を組む。許可（マイク、アクセシビリティ）をターミナルでなくアプリに付けるため、
+# build.noindex/Dictate.app を組む。許可（マイク、アクセシビリティ）をターミナルでなくアプリに付けるため、
 # 実行ファイルを直接起動せずバンドルにする。
 # 使い方: scripts/bundle.sh [--no-build] [署名 ID]
 #   署名 ID の省略時は、キーチェーンに自己署名の証明書「Dictate Dev」があればそれで署名する。
@@ -25,11 +25,11 @@ if (( build )); then
     swift build -c release
 fi
 scripts/make-icon.sh
-app=build/Dictate.app
+app=build.noindex/Dictate.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp .build/release/Dictate "$app/Contents/MacOS/Dictate"
-cp build/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
+cp build.noindex/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

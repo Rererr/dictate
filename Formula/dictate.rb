@@ -16,7 +16,7 @@ class Dictate < Formula
     system "swift", "build", "-c", "release", "--disable-sandbox"
     # アドホック署名。キーチェーンはサンドボックスから触らない
     system "scripts/bundle.sh", "--no-build", "-"
-    prefix.install "build/Dictate.app"
+    prefix.install "build.noindex/Dictate.app"
     (bin/"dictate").write <<~SH
       #!/bin/sh
       exec open -a "#{opt_prefix}/Dictate.app" --args "$@"

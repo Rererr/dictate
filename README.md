@@ -66,8 +66,8 @@ scripts/install.sh
 ```sh
 git clone https://github.com/Rererr/dictate.git
 cd dictate
-scripts/bundle.sh          # build/Dictate.app を組んで署名する
-open build/Dictate.app
+scripts/bundle.sh          # build.noindex/Dictate.app を組んで署名する
+open build.noindex/Dictate.app
 ```
 
 やめるときは、メニューから終了し、clone したディレクトリと `~/Library/Application Support/Dictate/` を消す。
@@ -146,8 +146,8 @@ Uninstall with `scripts/install.sh --uninstall` (quits a running Dictate, remove
 ```sh
 git clone https://github.com/Rererr/dictate.git
 cd dictate
-scripts/bundle.sh          # builds and signs build/Dictate.app
-open build/Dictate.app
+scripts/bundle.sh          # builds and signs build.noindex/Dictate.app
+open build.noindex/Dictate.app
 ```
 
 To uninstall, quit from the menu and delete the cloned directory and `~/Library/Application Support/Dictate/`.
@@ -346,7 +346,7 @@ GPU に使えるメモリが 10 GB 未満の Mac（メモリ 8 GB）では、4B 
 ## 字幕とトーストだけを確認する
 
 ```sh
-open build/Dictate.app --args --demo
+open build.noindex/Dictate.app --args --demo
 ```
 
 マイクも認識も使わず、メニューから選んだ場面（成功、整形の時間切れ、許可なし等）の表示を再生する。許可は要らない。
@@ -365,7 +365,7 @@ scripts/test.sh
 
 - 単体: 後処理（辞書、コマンド、フィラーの規則、数値マスク、整形の検証）、設定の読み書き、履歴、整形サーバの子プロセス
 - 一連: 認識結果の文字列から挿入する文とコマンドが決まるまで（辞書 → コマンド → フィラーの規則 → 整形 → 予算）を、アプリ本体と同じ判断の順で、LLM を固定の応答に置き換えて通す。合成音声（OS の `say` の Kyoko）を認識器に流し、確定まで通ることも確かめる（日本語の認識モデルと Kyoko の声がある Mac でだけ走る）
-- 起動: `scripts/e2e.sh` が `build/Dictate.app` を組み、署名と Info.plist を確かめ、`--demo` で起動して動き続けることと SIGTERM で終了できることを見る。続けて通常モードを、環境変数 `DICTATE_HOME` で隔離した設定ディレクトリで起動し、設定の `startCommand` を実行することを見る。動作中の Dictate と本人の設定には触らない
+- 起動: `scripts/e2e.sh` が `build.noindex/Dictate.app` を組み、署名と Info.plist を確かめ、`--demo` で起動して動き続けることと SIGTERM で終了できることを見る。続けて通常モードを、環境変数 `DICTATE_HOME` で隔離した設定ディレクトリで起動し、設定の `startCommand` を実行することを見る。動作中の Dictate と本人の設定には触らない
 - 整形サーバの実機: `DICTATE_LLM_E2E=1` を付けたときだけ走る。`DICTATE_LLM_BENCH=1` を付けると、本人の履歴を規則の前後で LLM に通して効果を数える計測（`FormatterSecondStageBench`）も走る（`docs/local-llm.md` の「自分の Mac で測る」）。`scripts/test.sh` では本物の `mlx_lm.server` を別のポート（8130）で起動し、接続、温め、整形、停止、接続不可までをアプリと同じ経路で通す。`scripts/e2e.sh` では実アプリを隔離した設定で起動し、1 回目の起動コマンドが失敗した後にメニューの「整形サーバを起動」を選んで（`--select`）サーバが立つことと、アプリの終了でサーバが止まることを見る（mlx-lm とモデルのキャッシュが要る。動作中の Dictate のサーバには触らない）
 
 ```sh

@@ -83,7 +83,7 @@ dictate/
   Sources/DictateKit/         後処理、履歴、設定、挿入の判断、整形サーバの子プロセス、GPU メモリの判定、LLM クライアント。AppKit に依存しない
   Sources/Dictate/            常駐アプリ本体（AppKit）。状態遷移と整形の段取りもここにある
   Tests/DictateKitTests/
-  scripts/bundle.sh           build/Dictate.app を組み、署名する
+  scripts/bundle.sh           build.noindex/Dictate.app を組み、署名する
   scripts/install.sh          前提を確かめ、組んで ~/Applications に置き、起動する
   scripts/make-cert.sh        自己署名のコード署名証明書を作る（ADR-3）
   scripts/make-icon.sh        scripts/icon.swift の描画からアプリアイコンを作る（画像は置かない）
@@ -571,7 +571,7 @@ CER は、台本の文頭のフィラーを規則と同じ形で除いた参照�
 ### ADR-2 Xcode なしで SwiftPM とスクリプトで組む
 
 - **状況**：この機体に Xcode が無い。マイクとアクセシビリティの許可は、ターミナルではなくアプリに付けたい。
-- **決定**：`swift build` の成果物を `scripts/bundle.sh` が `build/Dictate.app` に組む（Info.plist、`LSUIElement`、用途の文言、署名）。起動は `open build/Dictate.app`。
+- **決定**：`swift build` の成果物を `scripts/bundle.sh` が `build.noindex/Dictate.app` に組む（2026-10-20 に `build/` から改名。Spotlight が開発ビルドを索引し、アプリ一覧に Dictate が 2 つ並んだ。`.noindex` で終わるディレクトリは索引されない）（Info.plist、`LSUIElement`、用途の文言、署名）。起動は `open build.noindex/Dictate.app`。
 - **理由**：ターミナルから実行ファイルを直接起動すると、許可はターミナルに付く。挿入の権限がターミナルの権限と混ざり、他の機体や配布で再現しない。
 - **退けた案**：Xcode を入れる案。大きなダウンロードで、承認が要る。試作に必要な機能は CLT で足りる。
 
