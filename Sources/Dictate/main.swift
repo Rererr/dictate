@@ -1,9 +1,24 @@
 import AppKit
+import ServiceManagement
 
 // --demo: マイクも認識も使わず、字幕とトーストをメニューから再生する。
 // --demo --play N: 起動の直後に N 番目（0 始まり）の場面を再生する。--open-menu [秒]: 起動から（既定 1 秒）後にメニューを開く（通常の起動でも効く）。
 // どちらも画面の確認（スクリーンショット）のためで、人が操作するなら要らない。
 let arguments = CommandLine.arguments
+// --unregister-login-item: ログイン項目の登録を外して終わる（scripts/install.sh --uninstall が、アプリを消す前に呼ぶ。ADR-17）
+if arguments.contains("--unregister-login-item") {
+    let service = SMAppService.mainApp
+    if service.status == .enabled || service.status == .requiresApproval {
+        do {
+            try service.unregister()
+        } catch {
+            FileHandle.standardError.write(Data("ログイン項目を外せませんでした: \(error.localizedDescription)\n".utf8))
+            exit(1)
+        }
+        print("ログイン項目を外しました")
+    }
+    exit(0)
+}
 let play = arguments.firstIndex(of: "--play").flatMap { arguments.indices.contains($0 + 1) ? Int(arguments[$0 + 1]) : nil }
 // --open-menu の次に秒数があれば、その秒数だけ待ってから開く（起動後の状態の変化を見るとき）
 let openMenuAfter: Double? = arguments.firstIndex(of: "--open-menu").map { index in

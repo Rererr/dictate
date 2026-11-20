@@ -46,7 +46,7 @@ dictate                    # 起動（open /opt/homebrew/opt/dictate/Dictate.app
 Spotlight や Launchpad から起動したいときは、`ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app` で写す（更新のたびに写し直す。`brew upgrade` は写した方を更新しない）。
 更新は `brew update && brew upgrade --fetch-HEAD dictate`（`brew update` が tap の checkout を進め、`--fetch-HEAD` が無いと HEAD の formula は更新されない）。
 署名はアドホックなので、更新のたびにアクセシビリティの許可を付け直す（下の「署名と許可」）。
-やめるときは `brew uninstall dictate` と `brew untap rererr/dictate`（設定と履歴 `~/Library/Application Support/Dictate/` は残る）。
+やめるときは `brew uninstall dictate` と `brew untap rererr/dictate`（設定と履歴 `~/Library/Application Support/Dictate/` は残る）。「ログイン時に起動」をオンにしていたら、先にメニューでオフにする（消した後はシステム設定 > 一般 > ログイン項目と機能拡張で外す）。
 
 ### スクリプトで入れる
 
@@ -59,7 +59,7 @@ cd dictate
 scripts/install.sh
 ```
 
-やめるときは `scripts/install.sh --uninstall`（動作中の Dictate を終了させて `~/Applications/Dictate.app` を消す。設定と履歴は残す）。
+やめるときは `scripts/install.sh --uninstall`（動作中の Dictate を終了させ、ログイン項目の登録を外して、`~/Applications/Dictate.app` を消す。設定と履歴は残す）。
 
 ### 手で入れる
 
@@ -126,7 +126,7 @@ dictate                    # launches the app (same as open /opt/homebrew/opt/di
 To launch from Spotlight or Launchpad, copy it with `ditto /opt/homebrew/opt/dictate/Dictate.app ~/Applications/Dictate.app` (copy it again after every upgrade; `brew upgrade` does not touch the copy).
 Update with `brew update && brew upgrade --fetch-HEAD dictate` (`brew update` advances the tap checkout; without `--fetch-HEAD`, a HEAD-only formula is never updated).
 The build is ad-hoc signed, so after every update you have to grant the Accessibility permission again (see below).
-Uninstall with `brew uninstall dictate` and `brew untap rererr/dictate` (your settings and history in `~/Library/Application Support/Dictate/` stay).
+Uninstall with `brew uninstall dictate` and `brew untap rererr/dictate` (your settings and history in `~/Library/Application Support/Dictate/` stay). If "Launch at login" is on, turn it off from the menu first (after removal, remove it under System Settings > General > Login Items & Extensions).
 
 ### Install script
 
@@ -139,7 +139,7 @@ cd dictate
 scripts/install.sh
 ```
 
-Uninstall with `scripts/install.sh --uninstall` (quits a running Dictate and removes `~/Applications/Dictate.app`; keeps your settings and history).
+Uninstall with `scripts/install.sh --uninstall` (quits a running Dictate, removes the login item, and removes `~/Applications/Dictate.app`; keeps your settings and history).
 
 ### Manual install
 

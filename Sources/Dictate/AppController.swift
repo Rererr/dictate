@@ -2,6 +2,7 @@ import AppKit
 @preconcurrency import AVFoundation
 import Carbon.HIToolbox
 import DictateKit
+import ServiceManagement
 import SpeechCore
 
 @MainActor
@@ -481,6 +482,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 _ = action("ローカル LLM の手引きを開く", #selector(openLocalLLMGuide))
             }
         }
+        // 状態は OS が持つ（ADR-17）。デモ再生でも出し、--select で経路を確かめられるようにする
+        switch SMAppService.mainApp.status {
+        case .requiresApproval:
+            // 許可を待つ間の項目は設定を開く（登録を完了させるつもりで押した人が解除にならないように）。やめる項目は別に出す
+            action("ログイン時に起動（システム設定での許可待ち。選ぶと設定を開く）", #selector(openLoginItemsSettings)).state = .mixed
+            _ = action("ログイン時の起動をやめる", #selector(toggleLaunchAtLogin))
+        case .enabled:
+            action("ログイン時に起動", #selector(toggleLaunchAtLogin)).state = .on
+        case .notRegistered, .notFound:
+            action("ログイン時に起動", #selector(toggleLaunchAtLogin)).state = .off
+        @unknown default:
+            action("ログイン時に起動", #selector(toggleLaunchAtLogin)).state = .off
+        }
         _ = action(recorder == nil ? "ホットキーを登録…" : "ホットキーの登録の窓を前に出す", #selector(registerHotkey))
         _ = action(config.editor == nil ? "設定ファイルを開く…" : "設定ファイルを開く", #selector(openConfigFile))
         _ = action("設定と辞書を再読み込み", #selector(reloadFromMenu))
@@ -620,6 +634,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         updateConfig { $0.formatter.enabled.toggle() }
+    }
+
+    // MARK: - ログイン時の起動
+
+    /// OS のログイン項目に登録する（ADR-17）。許可待ちになったら、システム設定を開いて本人に委ねる
+    @objc private func toggleLaunchAtLogin() {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled || service.status == .requiresApproval {
+                try service.unregister()
+            } else {
+                try service.register()
+                if service.status == .requiresApproval {
+                    overlay.showToast(Messages.launchAtLoginRequiresApproval)
+                    SMAppService.openSystemSettingsLoginItems()
+                }
+            }
+        } catch {
+            overlay.showToast(Messages.launchAtLoginFailed(error.localizedDescription))
+        }
+    }
+
+    @objc private func openLoginItemsSettings() {
+        SMAppService.openSystemSettingsLoginItems()
     }
 
     private func updateConfig(_ change: (inout Config) -> Void) {

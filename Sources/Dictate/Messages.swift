@@ -81,6 +81,10 @@ enum Messages {
         }
     }
 
+    // ログイン時の起動
+    static let launchAtLoginRequiresApproval = "ログイン時の起動は、システム設定での許可待ちです。システム設定を開くので、一般 > ログイン項目と機能拡張で、Dictate をオンにしてください。"
+    static func launchAtLoginFailed(_ detail: String) -> String { "ログイン時の起動を切り替えられませんでした（\(detail)）。システム設定 > 一般 > ログイン項目と機能拡張で、Dictate を足すか外すかしてください。" }
+
     static func recognitionFailed(_ detail: String) -> String { "認識に失敗しました。\(detail)" }
     static func microphoneFailed(_ detail: String) -> String { "マイクを開けません。\(detail)" }
     static func historyFailed(_ detail: String) -> String { "履歴に書けません。\(detail)" }

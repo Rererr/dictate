@@ -1,7 +1,7 @@
 #!/bin/zsh
 # 前提を確かめ、組んで、~/Applications/Dictate.app に置いて、起動する。
 # 使い方: scripts/install.sh            前提の確認、ビルド、配置、起動
-#         scripts/install.sh --uninstall  ~/Applications/Dictate.app を消す（設定と履歴は残す）
+#         scripts/install.sh --uninstall  ログイン項目の登録を外し、~/Applications/Dictate.app を消す（設定と履歴は残す）
 set -euo pipefail
 cd "${0:A:h}/.."
 app=~/Applications/Dictate.app
@@ -9,6 +9,15 @@ fail() { print -u2 "install.sh: $1"; exit 1 }
 
 if [[ "${1:-}" == --uninstall ]]; then
     pkill -x Dictate 2>/dev/null || true
+    # ログイン項目に登録してあれば外す（消した後では外せない）。この引数を知らない旧版は、渡すとそのまま起動してしまうので、
+    # 実行ファイルに引数の文字列があるときだけ呼ぶ
+    executable="$app/Contents/MacOS/Dictate"
+    # 実行ファイルは -a で読む（-a が無いと BSD grep は実行ファイルの一致を見つけない。実測）
+    if [[ -x "$executable" ]] && grep -a -q -- --unregister-login-item "$executable"; then
+        "$executable" --unregister-login-item || true
+    elif [[ -x "$executable" ]]; then
+        print "この版の Dictate はログイン項目を自分で外せません。登録してあれば、システム設定 > 一般 > ログイン項目と機能拡張で外してください"
+    fi
     rm -rf "$app"
     print "消しました: $app"
     print "設定と履歴は残しています: ~/Library/Application Support/Dictate/"
