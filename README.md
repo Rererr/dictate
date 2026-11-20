@@ -293,6 +293,7 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
     "maxTokens": 512,
     "enableThinking": false,
     "systemPrompt": null,
+    "apiKey": null,
     "startCommand": "mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
   },
   "history": { "enabled": true, "maxMegabytes": 20 },
@@ -305,7 +306,7 @@ macOS 自体のショートカットと重なる組み合わせには警告が�
 
 `hotkey` は登録の窓が書く。手で書く場合、`code` は仮想キーコードで、マウスボタンは `{ "type": "mouse", "button": 3, "modifiers": [] }` の形になる（2 が中ボタン、3 以降がサイドボタン）。
 
-書式が壊れているとき、知らない項目名があるとき、値が範囲外のとき（`budgetSeconds` は 0 より大きく 30 以下、`temperature` は 0〜2、`maxTokens` は 1〜4096、`endpoint` は http か https）は、既定値には読み替えず、箇所を示して停止する。
+書式が壊れているとき、知らない項目名があるとき、値が範囲外のとき（`budgetSeconds` は 0 より大きく 30 以下、`temperature` は 0〜2 か `null`、`maxTokens` は 1〜4096、`endpoint` は http か https）は、既定値には読み替えず、箇所を示して停止する。
 直してからメニューの「設定と辞書を再読み込み」を選ぶ。
 
 メニューの「設定ファイルを開く」を選ぶと、全項目を現在の値で書き出してから `config.json` を開く。
@@ -318,6 +319,7 @@ LLM 整形は、規則でフィラーを消した後の文の句読点と空白�
 アプリが起動したサーバは、オフにしたときと終了時にアプリが止める。
 `budgetSeconds` 以内に結果が届かなければ、整形前の文を挿入する。遅いモデルを使うなら、この値を延ばす。
 `systemPrompt` を書くと組み込みのプロンプトを置き換える。ただし、挿入されるのは「句読点と空白の変更だけ」の検証を通った出力に限られ、それ以外の書き換え（フィラーの削除を含む）は捨てて整形前の文を挿入する。
+接続先はオンラインの OpenAI 互換 API（Claude 等）にもできる。`endpoint` をこの Mac 以外にし、`apiKey` に鍵を書く（`Authorization: Bearer` で送る。`config.json` はアプリが書くときに本人だけが読める権限にする）。Claude では `temperature` と `enableThinking` を `null`（送らない）にする。本文（数値は印に置き換えたもの）がそのホストに送られるので、オンにしたときにトーストで知らせ、メニューの「整形」の行に送信先を出す。この Mac 以外の接続先では `startCommand` と GPU メモリの判定は使わず、8B と 4B の切り替えも出ない。手順と Claude の例は [docs/local-llm.md](docs/local-llm.md) の「オンラインの API を使う」にある。
 
 ```sh
 # startCommand の既定値（手で立てるときも同じ）。モデルは 4B が既定で、余裕のある Mac にはメニューで 8B への切り替えを出す
@@ -336,7 +338,7 @@ GPU に使えるメモリが 10 GB 未満の Mac（メモリ 8 GB）では、4B 
 「キーを離して 1 秒以内」に入るかで決めている。M2 の MacBook Air では 8B が中央値 1.2 秒で入らず、4B は 0.7 秒でフィラーを消せた。M4 Pro の Mac mini では 8B が 0.5 秒で、数値の扱いは 8B の方が良い。そこで 4B を既定にし、余裕のある Mac にはメニューで 8B への切り替えを出す。1.7B 以下はフィラーを消さずに返す。27B は 3〜7 秒かかる。計測の表は [docs/local-llm.md](docs/local-llm.md#モデルをどう選んだか) にある。
 
 **話した内容はどこかに送られるか。**
-既定の設定では送られない。認識は Apple の端末内モデルで、整形の接続先は既定で `127.0.0.1`（この Mac）である。`formatter.endpoint` を他のホストにすれば、整形に送る本文はそこへ出る。履歴は `~/Library/Application Support/Dictate/history.jsonl` に文字として残り、音声は保存しない。
+既定の設定では送られない。認識は Apple の端末内モデルで、整形の接続先は既定で `127.0.0.1`（この Mac）である。`formatter.endpoint` を他のホスト（オンラインの API を含む）にすれば、整形に送る本文（数値は印に置き換えたもの）はそこへ出る。その場合は、オンにしたときにトーストで知らせ、メニューの「整形」の行に送信先を出す。履歴は `~/Library/Application Support/Dictate/history.jsonl` に文字として残り、音声は保存しない。
 
 **他の人の声や英語でも使えるか。**
 認識のロケール、読み辞書、末尾コマンド、フィラーの規則が日本語に固定されている。英語は対象外である。

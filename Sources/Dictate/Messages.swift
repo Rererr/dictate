@@ -37,6 +37,12 @@ enum Messages {
 
     // 整形サーバ
     static let formatterUnreachable = "整形サーバに接続できません。接続できるまでは整形前の文を挿入します。サーバを起動するか、config.json の formatter.startCommand に起動コマンドを書くと、オンにしたときにアプリが起動します。"
+    /// 接続先がこの Mac でないとき。起動コマンドは使わないので、対処は接続先とネットワークの確認になる
+    static func formatterRemoteUnreachable(host: String) -> String { "整形の接続先 \(host) に接続できません。接続できるまでは整形前の文を挿入します。ネットワークと config.json の formatter.endpoint を確かめてください。" }
+    /// 接続先がこの Mac でない整形をオンにしたとき。本文が外に出ることを、オンにした時点で知らせる
+    static func formatterRemote(host: String) -> String { "整形をオンにしました。話した本文（数値は印に置き換えたもの）が \(host) に送られます。送りたくなければ、もう一度「LLM で整える」を選んでオフにしてください。" }
+    /// 温めの要求を 4xx で拒まれた。待っても直らないので、理由を出して止める
+    static func formatterRequestRejected(_ detail: String) -> String { "\(detail)。整形前の文を挿入します。config.json の formatter.endpoint（末尾の /v1）、model、apiKey、temperature と enableThinking（Claude なら null）を確かめ、直したら「設定と辞書を再読み込み」を選んでください。" }
     static let formatterStarting = "整形サーバを起動しています。接続できるまでは整形前の文を挿入します。"
     static let formatterConnected = "整形サーバに接続できました。モデルを読み込んでいます。初回はダウンロードで数分かかり、終わるまでは整形前の文を挿入します。"
     static let formatterReady = "整形の準備ができました。"
@@ -52,7 +58,7 @@ enum Messages {
         let remedy = canDowngrade
             ? "メニューの「整形モデルを 4B に替える」を選ぶか、config.json の formatter.budgetSeconds を延ばす（挿入がその分遅れます）か、整形をオフにしてください。"
             : "config.json の formatter.budgetSeconds を延ばす（挿入がその分遅れます）か、整形をオフにしてください。"
-        return "この Mac では整形に \(String(format: "%.1f", seconds)) 秒かかり、予算の \(budget) 秒に入りません。このままでは多くの発話が時間切れになります。\(remedy)"
+        return "整形に \(String(format: "%.1f", seconds)) 秒かかり、予算の \(budget) 秒に入りません。このままでは多くの発話が時間切れになります。\(remedy)"
     }
     /// 起動コマンドの実行ファイルが無い。既定の mlx-lm なら入れ方まで示す
     static func formatterCommandMissing(_ name: String) -> String {

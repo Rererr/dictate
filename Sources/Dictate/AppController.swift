@@ -47,6 +47,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// 温めの直後に測った、1 文の整形にかかる秒数。予算を超えていれば知らせ、メニューに出す
     private var formatterSeconds: Double?
     private var formatterWarmUp: Task<Void, Never>?
+    /// 要求を 4xx で拒まれた理由。鍵やモデル名の誤りで、設定を直すまで整形を試みない（ADR-16）
+    private var formatterRejected: String?
+    /// 「本文が外に送られる」の知らせは、有効にした（または起動した）あと一度だけ
+    private var formatterRemoteNoticed = false
     private let formatterServer = FormatterServer(logURL: AppPaths.formatterLog)
     /// 接続できないときの知らせと自動起動は、オンにしたときと起動時に一度だけ行う。
     /// 他の設定を切り替えるたびには繰り返さず、やり直しはメニューの「整形サーバを起動」で本人が行う
@@ -156,6 +160,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             formatterWarm = false
             formatterWarmingSince = nil
             formatterSeconds = nil
+            formatterRejected = nil
+            formatterRemoteNoticed = false
             formatterWarmUp?.cancel()
         }
         ensureFormatter()
@@ -175,10 +181,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !demo, loadError == nil, config.formatter.enabled else {
             formatterServer.stop()
             formatterAttempted = false
+            formatterRemoteNoticed = false
             return
         }
-        // 8 GB の Mac では 4B でもスワップに入る。有効のまま設定が渡ってきても、起動せずに一度だけ知らせる
-        guard Machine.supportsFormatter else {
+        if !config.formatter.isLocal {
+            // 接続先を外に変えたら、この Mac で起動していたサーバは要らない（メモリを使い続けない）
+            formatterServer.stop()
+            if !formatterRemoteNoticed {
+                formatterRemoteNoticed = true
+                overlay.showToast(Messages.formatterRemote(host: formatterHost))
+            }
+        }
+        // 8 GB の Mac では 4B でもスワップに入る。有効のまま設定が渡ってきても、起動せずに一度だけ知らせる。接続先がこの Mac のときだけ（ADR-16）
+        guard !config.formatter.isLocal || Machine.supportsFormatter else {
             if !formatterAttempted {
                 formatterAttempted = true
                 overlay.showToast(Messages.formatterUnsupported(gpuMemoryGB: Machine.gpuMemoryGB))
@@ -196,13 +211,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // 本人が立てたサーバに届いたなら、前の失敗の表示は要らない
                 if case .failed = formatterServer.state { formatterServer.stop() }
                 formatterAttempted = false
-                // 温め済みか温めの途中なら、やり直さない（設定が変わったときは reload が状態を捨てている）
-                if !formatterWarm, formatterWarmingSince == nil { warmUpFormatter(client, announce: false) }
+                // 温め済みか温めの途中なら、やり直さない（設定が変わったときは reload が状態を捨てている）。拒まれた後も、設定を直す（reload）まではやり直さない
+                if !formatterWarm, formatterWarmingSince == nil, formatterRejected == nil { warmUpFormatter(client, announce: false) }
                 return
             }
             guard !formatterAttempted else { return }
             formatterAttempted = true
-            if let command = config.formatter.startCommand {
+            if !config.formatter.isLocal {
+                // 起動コマンドはこの Mac のサーバのためのもの。外の接続先には使わない（ADR-16）
+                overlay.showToast(Messages.formatterRemoteUnreachable(host: formatterHost))
+            } else if let command = config.formatter.startCommand {
                 startFormatterServer(command)
             } else {
                 overlay.showToast(Messages.formatterUnreachable)
@@ -261,41 +279,56 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func warmUpFormatter(_ client: LLMClient, announce: Bool) {
         formatterWarmUp?.cancel()
         formatterWarm = false
+        formatterRejected = nil
         formatterWarmingSince = Date()
         formatterWarmUp = Task {
             var waited = false
             while !Task.isCancelled, config.formatter.enabled {
-                if (try? await client.format("えっと、準備です")) != nil {
-                    guard !Task.isCancelled else { return }
-                    formatterWarm = true
-                    formatterWarmingSince = nil
-                    if announce || waited { overlay.showToast(Messages.formatterReady) }
-                    // 温まった状態で 1 文にかかる時間を測る。予算に入らない Mac では、発話のたびに時間切れを見せる前に知らせる
-                    let started = ContinuousClock.now
-                    if (try? await client.format("えっと、本番デプロイは15時からでいいですか")) != nil, !Task.isCancelled {
-                        let seconds = (ContinuousClock.now - started).seconds
-                        formatterSeconds = seconds
-                        if seconds > config.formatter.budgetSeconds {
-                            overlay.showToast(Messages.formatterSlow(seconds: seconds, budget: config.formatter.budgetSeconds, canDowngrade: canDowngradeFormatterModel))
-                        } else if canUpgradeFormatterModel, !UserDefaults.standard.bool(forKey: Self.upgradeSuggestedKey) {
-                            // 4B を選んで使う人に起動のたびに勧めない。メニューの項目は残る
-                            UserDefaults.standard.set(true, forKey: Self.upgradeSuggestedKey)
-                            overlay.showToast(Messages.formatterCanUpgrade(seconds: seconds))
-                        }
+                do {
+                    _ = try await client.format("えっと、準備です")
+                } catch {
+                    guard !Task.isCancelled else { return }  // 取り消された温めが、新しい温めの状態を上書きしない
+                    // 鍵やモデル名の誤り（4xx）は待っても直らない。「読み込み中」のまま繰り返さず、理由を出して止める（ADR-16）
+                    if let error = error as? LLMClient.ClientError, error.isRequestRejected {
+                        formatterWarmingSince = nil
+                        formatterRejected = error.localizedDescription
+                        overlay.showToast(Messages.formatterRequestRejected(error.localizedDescription))
+                        return
                     }
-                    return
+                    waited = true
+                    let reachable = await client.isReachable()
+                    guard !Task.isCancelled else { return }
+                    guard reachable else {
+                        markFormatterUnreachable()
+                        return
+                    }
+                    try? await Task.sleep(for: .seconds(10))
+                    continue
                 }
-                waited = true
-                let reachable = await client.isReachable()
-                guard !Task.isCancelled else { return }  // 取り消された温めが、新しい温めの状態を上書きしない
-                guard reachable else {
-                    markFormatterUnreachable()
-                    return
+                guard !Task.isCancelled else { return }
+                formatterWarm = true
+                formatterWarmingSince = nil
+                if announce || waited { overlay.showToast(Messages.formatterReady) }
+                // 温まった状態で 1 文にかかる時間を測る。予算に入らない Mac では、発話のたびに時間切れを見せる前に知らせる
+                let started = ContinuousClock.now
+                if (try? await client.format("えっと、本番デプロイは15時からでいいですか")) != nil, !Task.isCancelled {
+                    let seconds = (ContinuousClock.now - started).seconds
+                    formatterSeconds = seconds
+                    if seconds > config.formatter.budgetSeconds {
+                        overlay.showToast(Messages.formatterSlow(seconds: seconds, budget: config.formatter.budgetSeconds, canDowngrade: canDowngradeFormatterModel))
+                    } else if canUpgradeFormatterModel, !UserDefaults.standard.bool(forKey: Self.upgradeSuggestedKey) {
+                        // 4B を選んで使う人に起動のたびに勧めない。メニューの項目は残る
+                        UserDefaults.standard.set(true, forKey: Self.upgradeSuggestedKey)
+                        overlay.showToast(Messages.formatterCanUpgrade(seconds: seconds))
+                    }
                 }
-                try? await Task.sleep(for: .seconds(10))
+                return
             }
         }
     }
+
+    /// 接続先のホスト。トーストとメニューで「どこに送るか」を示す（endpoint は読み込み時にホストがあることを確かめている）
+    private var formatterHost: String { config.formatter.endpoint.host() ?? config.formatter.endpoint.absoluteString }
 
     /// 「8B に上げられる」を一度知らせたか。設定ではなくアプリの状態なので config.json には書かない
     private static let upgradeSuggestedKey = "formatterUpgradeSuggested"
@@ -375,7 +408,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             info("マイク: \(microphoneStatus.label)")
             info("アクセシビリティ: \(accessibilityTrusted ? "許可済み" : "未許可（挿入できません）")")
             info("日本語の認識モデル: \(modelInstalled.map { $0 ? "導入済み" : "未導入（認識できません）" } ?? "確認中")")
-            let reachability = switch (formatterServer.state, formatterReachable, formatterWarmingSince) {
+            let connection = switch (formatterServer.state, formatterReachable, formatterWarmingSince) {
             case (.starting(let since), _, _): "サーバを起動中 \(Int(Date().timeIntervalSince(since))) 秒。接続できるまで整形前の文を挿入します"
             case (.failed(let detail), _, _): "\(detail)。整形前の文を挿入します"
             case (_, .some(true), let since?): "モデルを読み込み中 \(Int(Date().timeIntervalSince(since))) 秒。終わるまで整形前の文を挿入します"
@@ -391,10 +424,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case (_, .some(false), _): "接続不可。整形前の文を挿入します"
             case (_, .none, _): "接続を確認中"
             }
-            if !Machine.supportsFormatter {
+            let reachability = formatterRejected.map { "\($0)。整形前の文を挿入します" } ?? connection
+            // 接続先がこの Mac でなければ、本文の送り先を常に出す（ADR-16）
+            let destination = config.formatter.isLocal ? "" : "送信先 \(formatterHost)。"
+            if config.formatter.isLocal, !Machine.supportsFormatter {
                 info("整形: この Mac では使えません（GPU に使えるメモリ \(Machine.gpuMemoryGB.map { String(format: "%.0f", $0) } ?? "不明") GB。\(Int(Machine.formatterMinimumGPUMemoryGB)) GB 以上が要ります）")
             } else {
-                info(config.formatter.enabled ? "整形: 有効（\(reachability)）" : "整形: 無効")
+                info(config.formatter.enabled ? "整形: 有効（\(destination)\(reachability)）" : "整形: 無効")
             }
             info("履歴: \(config.history.enabled ? "有効" : "無効")")
             info("辞書: \(dictionary.isEmpty ? "なし" : "読み込み済み")\(dictionarySkipped.isEmpty ? "" : "（\(dictionarySkipped.count) 行を読めなかった）")")
@@ -429,8 +465,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             action("LLM で整える（句読点）", #selector(toggleFormatter)).state = config.formatter.enabled ? .on : .off
             if canUpgradeFormatterModel { _ = action("整形モデルを 8B に上げる（約 4.3 GB のダウンロード）", #selector(upgradeFormatterModel)) }
             if canDowngradeFormatterModel { _ = action("整形モデルを 4B に替える（約 2.5 GB のダウンロード）", #selector(downgradeFormatterModel)) }
-            // 接続できないときだけ、起動とログの項目を出す
-            if config.formatter.enabled, formatterReachable != true {
+            // この Mac のサーバに接続できないときだけ、起動とログの項目を出す（外の接続先に起動はない）
+            if config.formatter.enabled, config.formatter.isLocal, formatterReachable != true {
                 switch formatterServer.state {
                 case .stopped, .failed:
                     if config.formatter.startCommand != nil { _ = action("整形サーバを起動", #selector(startFormatterServerFromMenu)) }
@@ -578,7 +614,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleFormatter() {
-        if !config.formatter.enabled, !Machine.supportsFormatter {
+        let turningOn = !config.formatter.enabled
+        if turningOn, config.formatter.isLocal, !Machine.supportsFormatter {
             overlay.showToast(Messages.formatterUnsupported(gpuMemoryGB: Machine.gpuMemoryGB))
             return
         }
@@ -777,6 +814,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let id = UUID().uuidString
         var text = post.body
         var formatSkipped: FormatStatus?
+        /// 要求を 4xx で拒まれたときは、「結果を得られなかった」でなく理由と直し方を出す
+        var formatRejectedNote: String?
         // 読み込み中や接続不可のときは試みない（1 秒待たせて時間切れにしない）。理由はメニューの状態表示にある
         if config.formatter.enabled, formatterWarm, !post.body.isEmpty {
             overlay.showCaption(.working, Messages.formatting)
@@ -788,9 +827,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 text = output
             } else {
                 formatSkipped = inBudget?.status ?? .timedOut
-                // 結果を得られなかったのは、届かないときだけでなく、HTTP エラーや応答の崩れでも起きる。
-                // 本当に届かないときだけ「接続不可」にし、メニューに起動の項目を出す（挿入の後で確かめる）
-                if inBudget?.status == .unreachable {
+                if let inBudget, inBudget.requestRejected {
+                    formatRejectedNote = Messages.formatterRequestRejected(inBudget.detail ?? "")
+                } else if inBudget?.status == .unreachable {
+                    // 結果を得られなかったのは、届かないときだけでなく、HTTP エラーや応答の崩れでも起きる。
+                    // 本当に届かないときだけ「接続不可」にし、メニューに起動の項目を出す（挿入の後で確かめる）
                     Task { if !(await client.isReachable()) { markFormatterUnreachable() } }
                 }
             }
@@ -798,6 +839,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Task {
                 let result = await formatting.value
                 record(FormatRecord(utteranceId: id, result: inBudget == nil ? result.afterBudget() : result))
+                // 温めの後に鍵が失効した、クレジットが尽きた等。次の発話では試みず、理由をメニューに出す（温めの拒否と同じ扱い）
+                if result.requestRejected {
+                    formatterRejected = result.detail
+                    formatterWarm = false
+                    formatterWarmUp?.cancel()
+                }
             }
         }
         let postprocessed = clock.now
@@ -843,7 +890,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .notInserted(let reason): reason
         case .commandNotSent: Messages.commandNotSent
         case .unverified(let reason, let sendSkipped): sendSkipped ? Messages.unverifiedNotSent : reason
-        case .formatSkipped(let status): Messages.formatSkipped(status)
+        case .formatSkipped(let status): formatRejectedNote ?? Messages.formatSkipped(status)
         }
         // トーストは 1 枚なので、履歴の失敗（record が出した知らせ）を挿入の知らせで上書きせず並べる
         if let note { overlay.showToast(note + (historyFailure ?? "")) }

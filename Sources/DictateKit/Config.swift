@@ -121,12 +121,16 @@ public struct Config: Sendable, Equatable, Codable {
         public static let largeModel = "mlx-community/Qwen3-8B-4bit"
         /// 確定からこの秒数以内に検証済みの結果が届かなければ、整形前の文を挿入する。
         public var budgetSeconds = 1.0
-        public var temperature = 0.0
+        /// nil なら送らない。Claude の 4.7 以降は 1 未満を 400 で拒むので、オンラインの API では null にする（ADR-16）。
+        public var temperature: Double? = 0.0
         public var maxTokens = 512
-        /// Qwen3 など、思考を出力するモデルで思考を止める指定を付ける。
-        public var enableThinking = false
+        /// Qwen3 など、思考を出力するモデルで思考を止める指定（chat_template_kwargs）を付ける。nil なら送らない。
+        /// オンラインの API は知らない項目を拒むことがあるので、そこでは null にする（ADR-16）。
+        public var enableThinking: Bool? = false
         /// nil なら組み込みのプロンプトを使う。変えても、検証を通るのはフィラーの削除と句読点の変更だけ。
         public var systemPrompt: String?
+        /// あれば Authorization: Bearer で送る。オンラインの API 用（ADR-16）。
+        public var apiKey: String?
         /// 整形をオンにしたときに接続できなければ、アプリがこのコマンドでサーバを起動する（ログインシェルで実行）。
         /// 既定は mlx-lm で既定のモデルを既定のポートに立てるコマンド。null は既定（systemPrompt と同じ扱い）。
         /// 空文字なら起動せず、接続できないと知らせるだけ（読み込み時に nil にする）。
@@ -138,8 +142,10 @@ public struct Config: Sendable, Equatable, Codable {
         public static func defaultStartCommand(model: String) -> String {
             "mlx_lm.server --model \(model) --port 8124 --chat-template-args '{\"enable_thinking\": false}'"
         }
-        /// モデルと起動コマンドが既定の組（アプリがモデルを切り替えてよい状態）か。
-        public var usesDefaultServer: Bool { startCommand == Self.defaultStartCommand(model: model) }
+        /// 接続先がこの Mac か。起動コマンド（ADR-13）と GPU メモリの判定（ADR-15）は、この Mac で動かすサーバにだけ当てはまる。
+        public var isLocal: Bool { ["127.0.0.1", "localhost", "::1"].contains(endpoint.host()?.lowercased() ?? "") }
+        /// この Mac のサーバで、モデルと起動コマンドが既定の組（アプリがモデルを切り替えてよい状態）か。
+        public var usesDefaultServer: Bool { isLocal && startCommand == Self.defaultStartCommand(model: model) }
 
         public init() {}
 
@@ -150,10 +156,16 @@ public struct Config: Sendable, Equatable, Codable {
             endpoint = try container.decodeIfPresent(URL.self, forKey: .endpoint) ?? endpoint
             model = try container.decodeIfPresent(String.self, forKey: .model) ?? model
             budgetSeconds = try container.decodeIfPresent(Double.self, forKey: .budgetSeconds) ?? budgetSeconds
-            temperature = try container.decodeIfPresent(Double.self, forKey: .temperature) ?? temperature
+            // 無ければ既定、null なら「送らない」（decodeIfPresent はどちらも nil にするので分ける）
+            if container.contains(.temperature) {
+                temperature = try container.decodeNil(forKey: .temperature) ? nil : try container.decode(Double.self, forKey: .temperature)
+            }
             maxTokens = try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? maxTokens
-            enableThinking = try container.decodeIfPresent(Bool.self, forKey: .enableThinking) ?? enableThinking
+            if container.contains(.enableThinking) {
+                enableThinking = try container.decodeNil(forKey: .enableThinking) ? nil : try container.decode(Bool.self, forKey: .enableThinking)
+            }
             systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
+            apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey)
             // 無い・null は既定。空白だけなら「起動しない」（init の中では didSet が走らないので、ここでも正規化する）
             if let command = try container.decodeIfPresent(String.self, forKey: .startCommand) {
                 startCommand = command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : command
@@ -171,12 +183,13 @@ public struct Config: Sendable, Equatable, Codable {
             try container.encode(enableThinking, forKey: .enableThinking)
             // 項目があることが設定ファイルから分かるように、未設定でも null で書き出す
             try container.encode(systemPrompt, forKey: .systemPrompt)
+            try container.encode(apiKey, forKey: .apiKey)
             // nil（起動しない）は空文字で書く。null は既定の意味になるため
             try container.encode(startCommand ?? "", forKey: .startCommand)
         }
 
         private enum CodingKeys: String, CodingKey, CaseIterable {
-            case enabled, endpoint, model, budgetSeconds, temperature, maxTokens, enableThinking, systemPrompt, startCommand
+            case enabled, endpoint, model, budgetSeconds, temperature, maxTokens, enableThinking, systemPrompt, apiKey, startCommand
         }
 
         var problem: String? {
@@ -184,7 +197,7 @@ public struct Config: Sendable, Equatable, Codable {
                 return "formatter.endpoint が URL になっていません（現在 \(endpoint.absoluteString)）。http://127.0.0.1:8124/v1 のように、http か https で書いてください。"
             }
             if !(budgetSeconds > 0 && budgetSeconds <= 30) { return "formatter.budgetSeconds が範囲外です（現在 \(budgetSeconds)）。0 より大きく 30 以下にしてください。" }
-            if !(temperature >= 0 && temperature <= 2) { return "formatter.temperature が範囲外です（現在 \(temperature)）。0 以上 2 以下にしてください。" }
+            if let temperature, !(temperature >= 0 && temperature <= 2) { return "formatter.temperature が範囲外です（現在 \(temperature)）。0 以上 2 以下にしてください（null なら送りません）。" }
             if !(1...4096).contains(maxTokens) { return "formatter.maxTokens が範囲外です（現在 \(maxTokens)）。1 以上 4096 以下にしてください。" }
             return nil
         }
@@ -307,6 +320,8 @@ public struct Config: Sendable, Equatable, Codable {
         let json = String(decoding: try encoder.encode(config), as: UTF8.self)
             .replacing(/\[\n\s*\]/, with: "[]")
         try Data(json.utf8).write(to: url, options: .atomic)
+        // apiKey が入りうるので、本人だけが読める権限にする（.atomic は新しいファイルを作るので、書くたびに付け直す）
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     private static func describe(_ error: DecodingError) -> String {

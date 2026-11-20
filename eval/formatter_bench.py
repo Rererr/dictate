@@ -4,6 +4,9 @@
 使い方:
   mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8124 --chat-template-args '{"enable_thinking": false}'
   python3 eval/formatter_bench.py --model mlx-community/Qwen3-4B-4bit
+  オンラインの API（ADR-16）: python3 eval/formatter_bench.py --endpoint https://api.anthropic.com/v1 --model claude-haiku-5-5 \
+      --api-key "$ANTHROPIC_API_KEY" --temperature null --thinking null
+  （--temperature null と --thinking null は、アプリの temperature と enableThinking を null にした条件と同じ）
 
 送る文は 12 文（Slack 風、メール風、介護記録風）。各文を 2 回送り、2 回目（温まった状態）の所要を取る。
 初回はモデルのダウンロードが終わるまで最初の要求が待たされる（既定 600 秒まで待つ）。
@@ -11,7 +14,7 @@
 文頭のフィラーは、アプリでは規則が先に消すので、送る前に規則と同じ語彙で落とす。
 数値はアプリと同じく印に置き換えて送る。
 """
-import argparse, json, re, statistics, time, urllib.request
+import argparse, json, re, statistics, time, urllib.error, urllib.request
 
 SENTENCES = [
     "えっと、本番デプロイは15時からでいいですか",
@@ -52,16 +55,24 @@ def strip_leading_filler(text):
             return text[len(filler) + 1:]
     return text
 
-def ask(endpoint, model, text, timeout):
-    body = json.dumps({
-        "model": model, "temperature": 0, "max_tokens": 256,
-        "chat_template_kwargs": {"enable_thinking": False},
-        "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": text}],
-    }).encode()
-    req = urllib.request.Request(f"{endpoint}/chat/completions", data=body, headers={"Content-Type": "application/json"})
+def ask(endpoint, model, text, timeout, api_key=None, temperature=0.0, thinking=False):
+    """アプリと同じ本文。temperature と thinking は None なら項目ごと送らない（アプリの null と同じ）。"""
+    request = {"model": model, "max_tokens": 256,
+               "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": text}]}
+    if temperature is not None:
+        request["temperature"] = temperature
+    if thinking is not None:
+        request["chat_template_kwargs"] = {"enable_thinking": thinking}
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    req = urllib.request.Request(f"{endpoint}/chat/completions", data=json.dumps(request).encode(), headers=headers)
     started = time.perf_counter()
-    with urllib.request.urlopen(req, timeout=timeout) as res:
-        content = json.load(res)["choices"][0]["message"]["content"]
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            content = json.load(res)["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as error:
+        raise SystemExit(f"HTTP {error.code}: {error.read().decode(errors='replace')}")
     return content.strip(), time.perf_counter() - started
 
 def main():
@@ -70,13 +81,20 @@ def main():
     parser.add_argument("--endpoint", default="http://127.0.0.1:8124/v1")
     # mlx_lm.server は待ち受けを開いた後もモデルのダウンロードを続ける。初回は温めの要求がその完了を待つ
     parser.add_argument("--timeout", type=float, default=600)
+    parser.add_argument("--api-key", help="オンラインの API の鍵。Authorization: Bearer で送る")
+    parser.add_argument("--temperature", default="0", help="数値か null（送らない。Claude は 1 未満を拒む）")
+    parser.add_argument("--thinking", default="false", choices=["false", "true", "null"], help="chat_template_kwargs の enable_thinking。null なら送らない")
     args = parser.parse_args()
-    ask(args.endpoint, args.model, "えっと、準備です", args.timeout)  # 温め
+    temperature = None if args.temperature == "null" else float(args.temperature)
+    thinking = {"false": False, "true": True, "null": None}[args.thinking]
+    def send(text):
+        return ask(args.endpoint, args.model, text, args.timeout, args.api_key, temperature, thinking)
+    send("えっと、準備です")  # 温め
     seconds, adopted, rejected = [], 0, []
     for sentence in SENTENCES:
         masked, _ = mask(strip_leading_filler(sentence))
-        ask(args.endpoint, args.model, masked, args.timeout)  # 1 回目は捨てる（キャッシュの影響を揃える）
-        output, elapsed = ask(args.endpoint, args.model, masked, args.timeout)
+        send(masked)  # 1 回目は捨てる（キャッシュの影響を揃える）
+        output, elapsed = send(masked)
         seconds.append(elapsed)
         ok = normalize(output) == normalize(masked)
         if ok:

@@ -81,6 +81,16 @@ public struct FormatResult: Sendable, Equatable {
     public let output: String?
     public let detail: String?
     public let seconds: Double
+    /// unreachable のうち、サーバが要求を 4xx で拒んだもの（鍵の失効、モデル名の誤り）。待っても直らないので、次の発話では試みない（ADR-16）。
+    public let requestRejected: Bool
+
+    public init(status: FormatStatus, output: String?, detail: String?, seconds: Double, requestRejected: Bool = false) {
+        self.status = status
+        self.output = output
+        self.detail = detail
+        self.seconds = seconds
+        self.requestRejected = requestRejected
+    }
 
     /// 予算内に届かなかった結果は採用しない。
     public func afterBudget() -> FormatResult {
@@ -99,7 +109,8 @@ public func formatVerified(_ text: String, using llm: @Sendable (String) async t
     do {
         output = try await llm(mask.masked).trimmingCharacters(in: .whitespacesAndNewlines)
     } catch {
-        return FormatResult(status: .unreachable, output: nil, detail: error.localizedDescription, seconds: elapsed())
+        let rejected = (error as? LLMClient.ClientError)?.isRequestRejected ?? false
+        return FormatResult(status: .unreachable, output: nil, detail: error.localizedDescription, seconds: elapsed(), requestRejected: rejected)
     }
     guard FormatVerifier.accepts(input: mask.masked, output: output), mask.keepsSeparators(in: output),
           let restored = mask.unmask(output),
@@ -144,15 +155,44 @@ public struct LLMClient: Sendable {
         self.settings = settings
     }
 
-    public enum ClientError: Error, LocalizedError {
-        case http(status: Int)
+    public enum ClientError: Error, LocalizedError, Equatable {
+        /// message は応答の error.message（OpenAI 互換の形）。無ければ nil。
+        case http(status: Int, message: String?)
         case malformedResponse(String)
 
         public var errorDescription: String? {
             switch self {
-            case .http(let status): "整形サーバが HTTP \(status) を返しました"
+            case .http(let status, let message): "整形サーバが HTTP \(status) を返しました" + (message.map { "（\($0)）" } ?? "")
             case .malformedResponse(let detail): "整形サーバの応答を読めません: \(detail)"
             }
+        }
+
+        /// 4xx は要求の側の誤り（鍵、モデル名、項目）で、待っても直らない。モデルの読み込み中の失敗（5xx や接続の失敗）と分ける。
+        /// 408（タイムアウト）と 429（レート制限）は時間がたてば直るので、拒否に数えない。
+        public var isRequestRejected: Bool {
+            if case .http(let status, _) = self { (400..<500).contains(status) && status != 408 && status != 429 } else { false }
+        }
+
+        /// 応答の本文から error.message を取り出す。`{"error": {"message": ...}}` と `{"error": "..."}` の両方を読む。
+        static func http(status: Int, body: Data) -> ClientError {
+            struct Body: Decodable {
+                enum Detail: Decodable {
+                    case object(message: String), text(String)
+                    init(from decoder: Decoder) throws {
+                        let container = try decoder.singleValueContainer()
+                        if let text = try? container.decode(String.self) { self = .text(text); return }
+                        struct Object: Decodable { let message: String }
+                        self = .object(message: try container.decode(Object.self).message)
+                    }
+                    var message: String {
+                        switch self {
+                        case .object(let message), .text(let message): message
+                        }
+                    }
+                }
+                let error: Detail
+            }
+            return .http(status: status, message: (try? JSONDecoder().decode(Body.self, from: body))?.error.message)
         }
     }
 
@@ -167,10 +207,11 @@ public struct LLMClient: Sendable {
             let content: String
         }
         let model: String
-        let temperature: Double
+        /// nil は項目ごと送らない（synthesized な Encodable は nil を省く）
+        let temperature: Double?
         let max_tokens: Int
         let stream = false
-        let chat_template_kwargs: [String: Bool]
+        let chat_template_kwargs: [String: Bool]?
         let messages: [Message]
     }
 
@@ -182,22 +223,36 @@ public struct LLMClient: Sendable {
         let choices: [Choice]
     }
 
-    public func format(_ text: String) async throws -> String {
+    /// 整形の要求。鍵があれば Authorization に付ける。
+    /// chat_template_kwargs（Qwen3 の思考の指定）は enableThinking が null なら送らない（ADR-16）
+    func makeRequest(_ text: String) throws -> URLRequest {
         var request = URLRequest(url: settings.endpoint.appending(path: "chat/completions"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        authorize(&request)
         request.timeoutInterval = 30
         request.httpBody = try JSONEncoder().encode(Request(
             model: settings.model, temperature: settings.temperature, max_tokens: settings.maxTokens,
-            chat_template_kwargs: ["enable_thinking": settings.enableThinking],
+            chat_template_kwargs: settings.enableThinking.map { ["enable_thinking": $0] },
             messages: [
                 .init(role: "system", content: settings.systemPrompt ?? Self.defaultSystemPrompt),
                 .init(role: "user", content: text),
             ]
         ))
-        let (data, response) = try await URLSession.shared.data(for: request)
+        return request
+    }
+
+    /// OpenAI 互換の口は Bearer を読む。Anthropic の /v1/models は本来の API で x-api-key を読む（鍵なしで 401 を実測）ので、同じ鍵を両方に付ける
+    private func authorize(_ request: inout URLRequest) {
+        guard let apiKey = settings.apiKey else { return }
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+    }
+
+    public func format(_ text: String) async throws -> String {
+        let (data, response) = try await URLSession.shared.data(for: try makeRequest(text))
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw ClientError.http(status: http.statusCode)
+            throw ClientError.http(status: http.statusCode, body: data)
         }
         let decoded: Response
         do {
@@ -212,9 +267,12 @@ public struct LLMClient: Sendable {
     }
 
     /// 設定の表示用。到達できるかだけを見る。
+    /// 200 を求めるのは、この Mac のポートを別の HTTP サーバが使っているときに「到達」と見なさないため（起動コマンドが Address already in use で失敗し、原因が分かる）。
+    /// 外の接続先は TLS の往復に 0.3〜0.5 秒かかる（実測）ので、待ちを長くする
     public func isReachable() async -> Bool {
         var request = URLRequest(url: settings.endpoint.appending(path: "models"))
-        request.timeoutInterval = 1
+        request.timeoutInterval = settings.isLocal ? 1 : 5
+        authorize(&request)
         guard let (_, response) = try? await URLSession.shared.data(for: request) else { return false }
         return (response as? HTTPURLResponse)?.statusCode == 200
     }

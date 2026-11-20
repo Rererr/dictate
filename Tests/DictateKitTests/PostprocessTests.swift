@@ -478,6 +478,42 @@ import Testing
         }
     }
 
+    @Test func temperatureはnullで送らない意味になり無ければ既定のまま() throws {
+        #expect(try Config.load(from: write(#"{"formatter": {"temperature": null}}"#)).formatter.temperature == nil)
+        #expect(try Config.load(from: write(#"{"formatter": {}}"#)).formatter.temperature == 0)
+        let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString)/config.json")
+        try Config.update(at: url) { $0.formatter.temperature = nil }
+        #expect(try String(contentsOf: url, encoding: .utf8).contains("\"temperature\" : null"))
+        #expect(try Config.load(from: url).formatter.temperature == nil)
+    }
+
+    @Test func 鍵は書き出して読み直せ設定ファイルは本人だけが読める() throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString)/config.json")
+        try Config.update(at: url) { $0.formatter.apiKey = "sk-test" }
+        #expect(try Config.load(from: url).formatter.apiKey == "sk-test")
+        let permissions = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
+        #expect(permissions == 0o600)
+        try Config.update(at: url) { $0.formatter.apiKey = nil }
+        #expect(try String(contentsOf: url, encoding: .utf8).contains("\"apiKey\" : null"))
+    }
+
+    @Test func enableThinkingはnullで送らない意味になり無ければ既定のfalse() throws {
+        #expect(try Config.load(from: write(#"{"formatter": {"enableThinking": null}}"#)).formatter.enableThinking == nil)
+        #expect(try Config.load(from: write(#"{"formatter": {}}"#)).formatter.enableThinking == false)
+        #expect(try Config.load(from: write(#"{"formatter": {"enableThinking": true}}"#)).formatter.enableThinking == true)
+    }
+
+    @Test(arguments: [
+        ("http://127.0.0.1:8124/v1", true), ("http://LOCALHOST:8124/v1", true), ("http://[::1]:8124/v1", true),
+        ("https://api.anthropic.com/v1", false), ("http://192.168.1.10:8124/v1", false),
+    ])
+    func 接続先がこのMacかはホストで決まる(endpoint: String, local: Bool) throws {
+        let config = try Config.load(from: write(#"{"formatter": {"endpoint": "\#(endpoint)"}}"#))
+        #expect(config.formatter.isLocal == local)
+        // 既定の起動コマンドのままでも、外の接続先ではモデルの切り替え（既定の組）にしない
+        #expect(config.formatter.usesDefaultServer == local)
+    }
+
     @Test func プロンプトが未設定でも項目をnullで書き出す() throws {
         let url = FileManager.default.temporaryDirectory.appending(path: "dictate-test-\(UUID().uuidString)/config.json")
         try Config.update(at: url)
