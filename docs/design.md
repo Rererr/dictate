@@ -88,7 +88,7 @@ dictate/
   scripts/make-cert.sh        自己署名のコード署名証明書を作る（ADR-3）
   scripts/make-icon.sh        scripts/icon.swift の描画からアプリアイコンを作る（画像は置かない）
   scripts/test.sh             核とアプリのテストを両方回す
-  scripts/e2e.sh              組んだアプリを --demo と通常モード（DICTATE_HOME で隔離）で起動し、動き続けることと終了できること、起動コマンドの実行を確かめる
+  scripts/e2e.sh              組んだアプリを --demo と通常モード（DICTATE_HOME で隔離）で起動し、動き続けることと終了できること、起動コマンドの実行、以前の既定の整形モデルからの移行を確かめる
   Formula/dictate.rb          Homebrew の formula（ADR-11）
   eval/                       評価シート（3 組の台本）、採点スクリプト、整形モデルの計測スクリプト
   docs/design.md
